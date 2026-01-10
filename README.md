@@ -127,7 +127,7 @@ npx antigravity-claude-proxy@latest start
 npm start
 ```
 
-The server runs on `http://localhost:8080` by default.
+The server runs on `http://localhost:8672` by default.
 
 To use a custom port:
 
@@ -139,10 +139,10 @@ PORT=3001 antigravity-claude-proxy start
 
 ```bash
 # Health check
-curl http://localhost:8080/health
+curl http://localhost:8672/health
 
 # Check account status and quota limits
-curl "http://localhost:8080/account-limits?format=table"
+curl "http://localhost:8672/account-limits?format=table"
 ```
 
 ---
@@ -163,7 +163,7 @@ Add this configuration:
 {
   "env": {
     "ANTHROPIC_AUTH_TOKEN": "test",
-    "ANTHROPIC_BASE_URL": "http://localhost:8080",
+    "ANTHROPIC_BASE_URL": "http://localhost:8672",
     "ANTHROPIC_MODEL": "claude-opus-4-5-thinking",
     "ANTHROPIC_DEFAULT_OPUS_MODEL": "claude-opus-4-5-thinking",
     "ANTHROPIC_DEFAULT_SONNET_MODEL": "claude-sonnet-4-5-thinking",
@@ -182,7 +182,7 @@ Or to use Gemini models:
 {
   "env": {
     "ANTHROPIC_AUTH_TOKEN": "test",
-    "ANTHROPIC_BASE_URL": "http://localhost:8080",
+    "ANTHROPIC_BASE_URL": "http://localhost:8672",
     "ANTHROPIC_MODEL": "gemini-3-pro-high[1m]",
     "ANTHROPIC_DEFAULT_OPUS_MODEL": "gemini-3-pro-high[1m]",
     "ANTHROPIC_DEFAULT_SONNET_MODEL": "gemini-3-flash[1m]",
@@ -200,7 +200,7 @@ Add the proxy settings to your shell profile:
 **macOS / Linux:**
 
 ```bash
-echo 'export ANTHROPIC_BASE_URL="http://localhost:8080"' >> ~/.zshrc
+echo 'export ANTHROPIC_BASE_URL="http://localhost:8672"' >> ~/.zshrc
 echo 'export ANTHROPIC_AUTH_TOKEN="test"' >> ~/.zshrc
 source ~/.zshrc
 ```
@@ -210,7 +210,7 @@ source ~/.zshrc
 **Windows (PowerShell):**
 
 ```powershell
-Add-Content $PROFILE "`n`$env:ANTHROPIC_BASE_URL = 'http://localhost:8080'"
+Add-Content $PROFILE "`n`$env:ANTHROPIC_BASE_URL = 'http://localhost:8672'"
 Add-Content $PROFILE "`$env:ANTHROPIC_AUTH_TOKEN = 'test'"
 . $PROFILE
 ```
@@ -218,7 +218,7 @@ Add-Content $PROFILE "`$env:ANTHROPIC_AUTH_TOKEN = 'test'"
 **Windows (Command Prompt):**
 
 ```cmd
-setx ANTHROPIC_BASE_URL "http://localhost:8080"
+setx ANTHROPIC_BASE_URL "http://localhost:8672"
 setx ANTHROPIC_AUTH_TOKEN "test"
 ```
 
@@ -244,7 +244,7 @@ To run both the official Claude Code and Antigravity version simultaneously, add
 
 ```bash
 # Add to ~/.zshrc or ~/.bashrc
-alias claude-antigravity='CLAUDE_CONFIG_DIR=~/.claude-account-antigravity ANTHROPIC_BASE_URL="http://localhost:8080" ANTHROPIC_AUTH_TOKEN="test" command claude'
+alias claude-antigravity='CLAUDE_CONFIG_DIR=~/.claude-account-antigravity ANTHROPIC_BASE_URL="http://localhost:8672" ANTHROPIC_AUTH_TOKEN="test" command claude'
 ```
 
 **Windows (PowerShell):**
@@ -253,7 +253,7 @@ alias claude-antigravity='CLAUDE_CONFIG_DIR=~/.claude-account-antigravity ANTHRO
 # Add to $PROFILE
 function claude-antigravity {
     $env:CLAUDE_CONFIG_DIR = "$env:USERPROFILE\.claude-account-antigravity"
-    $env:ANTHROPIC_BASE_URL = "http://localhost:8080"
+    $env:ANTHROPIC_BASE_URL = "http://localhost:8672"
     $env:ANTHROPIC_AUTH_TOKEN = "test"
     claude
 }
@@ -267,18 +267,18 @@ Then run `claude` for official API or `claude-antigravity` for this proxy.
 
 ### Claude Models
 
-| Model ID | Description |
-|----------|-------------|
+| Model ID                     | Description                              |
+| ---------------------------- | ---------------------------------------- |
 | `claude-sonnet-4-5-thinking` | Claude Sonnet 4.5 with extended thinking |
-| `claude-opus-4-5-thinking` | Claude Opus 4.5 with extended thinking |
-| `claude-sonnet-4-5` | Claude Sonnet 4.5 without thinking |
+| `claude-opus-4-5-thinking`   | Claude Opus 4.5 with extended thinking   |
+| `claude-sonnet-4-5`          | Claude Sonnet 4.5 without thinking       |
 
 ### Gemini Models
 
-| Model ID | Description |
-|----------|-------------|
-| `gemini-3-flash` | Gemini 3 Flash with thinking |
-| `gemini-3-pro-low` | Gemini 3 Pro Low with thinking |
+| Model ID            | Description                     |
+| ------------------- | ------------------------------- |
+| `gemini-3-flash`    | Gemini 3 Flash with thinking    |
+| `gemini-3-pro-low`  | Gemini 3 Pro Low with thinking  |
 | `gemini-3-pro-high` | Gemini 3 Pro High with thinking |
 
 Gemini models include full thinking support with `thoughtSignature` handling for multi-turn conversations.
@@ -298,20 +298,20 @@ When you add multiple accounts, the proxy automatically:
 Check account status anytime:
 
 ```bash
-curl "http://localhost:8080/account-limits?format=table"
+curl "http://localhost:8672/account-limits?format=table"
 ```
 
 ---
 
 ## API Endpoints
 
-| Endpoint | Method | Description |
-|----------|--------|-------------|
-| `/health` | GET | Health check |
-| `/account-limits` | GET | Account status and quota limits (add `?format=table` for ASCII table) |
-| `/v1/messages` | POST | Anthropic Messages API |
-| `/v1/models` | GET | List available models |
-| `/refresh-token` | POST | Force token refresh |
+| Endpoint          | Method | Description                                                           |
+| ----------------- | ------ | --------------------------------------------------------------------- |
+| `/health`         | GET    | Health check                                                          |
+| `/account-limits` | GET    | Account status and quota limits (add `?format=table` for ASCII table) |
+| `/v1/messages`    | POST   | Anthropic Messages API                                                |
+| `/v1/models`      | GET    | List available models                                                 |
+| `/refresh-token`  | POST   | Force token refresh                                                   |
 
 ---
 
@@ -345,6 +345,7 @@ npm run test:caching       # Prompt caching
 ### "Could not extract token from Antigravity"
 
 If using single-account mode with Antigravity:
+
 1. Make sure Antigravity app is installed and running
 2. Ensure you're logged in to Antigravity
 
@@ -353,11 +354,13 @@ Or add accounts via OAuth instead: `antigravity-claude-proxy accounts add`
 ### 401 Authentication Errors
 
 The token might have expired. Try:
+
 ```bash
-curl -X POST http://localhost:8080/refresh-token
+curl -X POST http://localhost:8672/refresh-token
 ```
 
 Or re-authenticate the account:
+
 ```bash
 antigravity-claude-proxy accounts
 ```
@@ -369,6 +372,7 @@ With multiple accounts, the proxy automatically switches to the next available a
 ### Account Shows as "Invalid"
 
 Re-authenticate the account:
+
 ```bash
 antigravity-claude-proxy accounts
 # Choose "Re-authenticate" for the invalid account

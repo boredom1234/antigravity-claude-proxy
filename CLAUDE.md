@@ -14,7 +14,7 @@ The proxy translates requests from Anthropic Messages API format → Google Gene
 # Install dependencies
 npm install
 
-# Start server (runs on port 8080)
+# Start server (runs on port 8672)
 npm start
 
 # Start with model fallback enabled (falls back to alternate model when quota exhausted)
@@ -33,7 +33,7 @@ npm run accounts:add -- --no-browser  # Add account on headless server (manual c
 npm run accounts:list    # List configured accounts
 npm run accounts:verify  # Verify account tokens are valid
 
-# Run all tests (server must be running on port 8080)
+# Run all tests (server must be running on port 8672)
 npm test
 
 # Run individual tests
@@ -50,6 +50,7 @@ npm run test:oauth         # OAuth no-browser mode
 ## Architecture
 
 **Request Flow:**
+
 ```
 Claude Code CLI → Express Server (server.js) → CloudCode Client → Antigravity Cloud Code API
 ```
@@ -117,6 +118,7 @@ src/
 - **src/errors.js**: Custom error classes (`RateLimitError`, `AuthError`, `ApiError`, etc.)
 
 **Multi-Account Load Balancing:**
+
 - Sticky account selection for prompt caching (stays on same account across turns)
 - Model-specific rate limiting via `account.modelRateLimits[modelId]`
 - Automatic switch only when rate-limited for > 2 minutes on the current model
@@ -124,12 +126,14 @@ src/
 - Account state persisted to `~/.config/antigravity-proxy/accounts.json`
 
 **Prompt Caching:**
+
 - Cache is organization-scoped (requires same account + session ID)
 - Session ID is SHA256 hash of first user message content (stable across turns)
 - `cache_read_input_tokens` returned in usage metadata when cache hits
 - Token calculation: `input_tokens = promptTokenCount - cachedContentTokenCount`
 
 **Model Fallback (--fallback flag):**
+
 - When all accounts are exhausted for a model, automatically falls back to an alternate model
 - Fallback mappings defined in `MODEL_FALLBACK_MAP` in `src/constants.js`
 - Thinking models fall back to thinking models (e.g., `claude-sonnet-4-5-thinking` → `gemini-3-flash`)
@@ -137,6 +141,7 @@ src/
 - Enable with `npm start -- --fallback` or `FALLBACK=true` environment variable
 
 **Cross-Model Thinking Signatures:**
+
 - Claude and Gemini use incompatible thinking signatures
 - When switching models mid-conversation, incompatible signatures are detected and dropped
 - Signature cache tracks model family ('claude' or 'gemini') for each signature
@@ -146,6 +151,7 @@ src/
 - For Claude targets: lenient - lets Claude validate its own signatures
 
 **Native Module Auto-Rebuild:**
+
 - When Node.js is updated, native modules like `better-sqlite3` may become incompatible
 - The proxy automatically detects `NODE_MODULE_VERSION` mismatch errors
 - On detection, it attempts to rebuild the module using `npm rebuild`
@@ -162,6 +168,7 @@ src/
 ## Code Organization
 
 **Constants:** All configuration values are centralized in `src/constants.js`:
+
 - API endpoints and headers
 - Model mappings and model family detection (`getModelFamily()`, `isThinkingModel()`)
 - Model fallback mappings (`MODEL_FALLBACK_MAP`)
@@ -170,23 +177,27 @@ src/
 - Thinking model settings
 
 **Model Family Handling:**
+
 - `getModelFamily(model)` returns `'claude'` or `'gemini'` based on model name
 - Claude models use `signature` field on thinking blocks
 - Gemini models use `thoughtSignature` field on functionCall parts (cached or sentinel value)
 - When Claude Code strips `thoughtSignature`, the proxy tries to restore from cache, then falls back to `skip_thought_signature_validator`
 
 **Error Handling:** Use custom error classes from `src/errors.js`:
+
 - `RateLimitError` - 429/RESOURCE_EXHAUSTED errors
 - `AuthError` - Authentication failures
 - `ApiError` - Upstream API errors
 - Helper functions: `isRateLimitError()`, `isAuthError()`
 
 **Utilities:** Shared helpers in `src/utils/helpers.js`:
+
 - `formatDuration(ms)` - Format milliseconds as "1h23m45s"
 - `sleep(ms)` - Promise-based delay
 - `isNetworkError(error)` - Check if error is a transient network error
 
 **Logger:** Structured logging via `src/utils/logger.js`:
+
 - `logger.info(msg)` - Standard info (blue)
 - `logger.success(msg)` - Success messages (green)
 - `logger.warn(msg)` - Warnings (yellow)
