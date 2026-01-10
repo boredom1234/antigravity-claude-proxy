@@ -19,6 +19,7 @@ import { parseResetTime } from './rate-limit-parser.js';
 import { buildCloudCodeRequest, buildHeaders } from './request-builder.js';
 import { parseThinkingSSEResponse } from './sse-parser.js';
 import { getFallbackModel } from '../fallback-config.js';
+import { deriveSessionId } from './session-manager.js';
 
 /**
  * Send a non-streaming request to Cloud Code with multi-account support
@@ -36,6 +37,7 @@ import { getFallbackModel } from '../fallback-config.js';
 export async function sendMessage(anthropicRequest, accountManager, fallbackEnabled = false) {
     const model = anthropicRequest.model;
     const isThinking = isThinkingModel(model);
+    const sessionId = deriveSessionId(anthropicRequest);
 
     // Retry loop with account failover
     // Ensure we try at least as many times as there are accounts to cycle through everyone
@@ -44,7 +46,7 @@ export async function sendMessage(anthropicRequest, accountManager, fallbackEnab
 
     for (let attempt = 0; attempt < maxAttempts; attempt++) {
         // Use sticky account selection for cache continuity
-        const { account: stickyAccount, waitMs } = accountManager.pickStickyAccount(model);
+        const { account: stickyAccount, waitMs } = accountManager.pickStickyAccount(model, sessionId);
         let account = stickyAccount;
 
         // Handle waiting for sticky account

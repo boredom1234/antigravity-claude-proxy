@@ -36,6 +36,7 @@ export class AccountManager {
     #configPath;
     #settings = {};
     #initialized = false;
+    #lastSessionId = null;
 
     // Per-account caches
     #tokenCache = new Map(); // email -> { token, extractedAt }
@@ -165,12 +166,25 @@ export class AccountManager {
      * Prefers the current account for cache continuity, only switches when:
      * - Current account is rate-limited for > 2 minutes
      * - Current account is invalid
+     * - Session ID has changed (new conversation)
      * @param {string} [modelId] - Optional model ID
+     * @param {string} [sessionId] - Optional session ID
      * @returns {{account: Object|null, waitMs: number}} Account to use and optional wait time
      */
-    pickStickyAccount(modelId = null) {
-        const { account, waitMs, newIndex } = selectSticky(this.#accounts, this.#currentIndex, () => this.saveToDisk(), modelId);
+    pickStickyAccount(modelId = null, sessionId = null) {
+        const { account, waitMs, newIndex } = selectSticky(
+            this.#accounts,
+            this.#currentIndex,
+            () => this.saveToDisk(),
+            modelId,
+            sessionId,
+            this.#lastSessionId
+        );
+
         this.#currentIndex = newIndex;
+        if (sessionId) {
+            this.#lastSessionId = sessionId;
+        }
         return { account, waitMs };
     }
 

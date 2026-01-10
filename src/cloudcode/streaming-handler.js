@@ -18,6 +18,7 @@ import { parseResetTime } from './rate-limit-parser.js';
 import { buildCloudCodeRequest, buildHeaders } from './request-builder.js';
 import { streamSSEResponse } from './sse-streamer.js';
 import { getFallbackModel } from '../fallback-config.js';
+import { deriveSessionId } from './session-manager.js';
 import crypto from 'crypto';
 
 /**
@@ -35,6 +36,7 @@ import crypto from 'crypto';
  */
 export async function* sendMessageStream(anthropicRequest, accountManager, fallbackEnabled = false) {
     const model = anthropicRequest.model;
+    const sessionId = deriveSessionId(anthropicRequest);
 
     // Retry loop with account failover
     // Ensure we try at least as many times as there are accounts to cycle through everyone
@@ -43,7 +45,7 @@ export async function* sendMessageStream(anthropicRequest, accountManager, fallb
 
     for (let attempt = 0; attempt < maxAttempts; attempt++) {
         // Use sticky account selection for cache continuity
-        const { account: stickyAccount, waitMs } = accountManager.pickStickyAccount(model);
+        const { account: stickyAccount, waitMs } = accountManager.pickStickyAccount(model, sessionId);
         let account = stickyAccount;
 
         // Handle waiting for sticky account

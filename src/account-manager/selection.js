@@ -164,9 +164,22 @@ export function shouldWaitForCurrentAccount(accounts, currentIndex, modelId = nu
  * @param {number} currentIndex - Current account index
  * @param {Function} onSave - Callback to save changes
  * @param {string} [modelId] - Model ID to check rate limits for
+ * @param {string} [sessionId] - Current session ID
+ * @param {string} [lastSessionId] - Previously seen session ID
  * @returns {{account: Object|null, waitMs: number, newIndex: number}}
  */
-export function pickStickyAccount(accounts, currentIndex, onSave, modelId = null) {
+export function pickStickyAccount(accounts, currentIndex, onSave, modelId = null, sessionId = null, lastSessionId = null) {
+    // If session has changed, force pickNext to balance load for new conversations
+    if (sessionId && lastSessionId && sessionId !== lastSessionId) {
+        logger.debug(`[AccountManager] Session changed (${lastSessionId?.substring(0, 8)}... -> ${sessionId?.substring(0, 8)}...), picking next account`);
+        const { account: nextAccount, newIndex } = pickNext(accounts, currentIndex, onSave, modelId);
+        if (nextAccount) {
+            return { account: nextAccount, waitMs: 0, newIndex };
+        }
+        // If pickNext failed (e.g. all rate limited), fall through to standard sticky logic
+        // which has wait/retry logic
+    }
+
     // First try to get the current sticky account
     const { account: stickyAccount, newIndex: stickyIndex } = getCurrentStickyAccount(accounts, currentIndex, onSave, modelId);
     if (stickyAccount) {
