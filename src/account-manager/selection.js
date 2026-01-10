@@ -5,7 +5,7 @@
  * All rate limit checks are model-specific.
  */
 
-import { MAX_WAIT_BEFORE_ERROR_MS } from '../constants.js';
+import { MAX_WAIT_BEFORE_ERROR_MS, STICKY_COOLDOWN_THRESHOLD_MS, MAX_CONCURRENT_REQUESTS } from '../constants.js';
 import { formatDuration } from '../utils/helpers.js';
 import { logger } from '../utils/logger.js';
 import { clearExpiredLimits, getAvailableAccounts } from './rate-limits.js';
@@ -18,6 +18,9 @@ import { clearExpiredLimits, getAvailableAccounts } from './rate-limits.js';
  */
 function isAccountUsable(account, modelId) {
     if (!account || account.isInvalid) return false;
+
+    // Check concurrency limit
+    if ((account.activeRequests || 0) >= MAX_CONCURRENT_REQUESTS) return false;
 
     if (modelId && account.modelRateLimits && account.modelRateLimits[modelId]) {
         const limit = account.modelRateLimits[modelId];
@@ -171,7 +174,18 @@ export function pickStickyAccount(accounts, currentIndex, onSave, modelId = null
     }
 
     // Current account is rate-limited or invalid.
-    // CHECK IF OTHERS ARE AVAILABLE before deciding to wait.
+
+    // Check if we should wait for the current account (to preserve cache)
+    const waitInfo = shouldWaitForCurrentAccount(accounts, currentIndex, modelId);
+
+    // Optimization: If the wait is short (<= 15s), prefer waiting over switching accounts.
+    // This preserves the prompt cache which saves significant tokens/latency on the next turn.
+    if (waitInfo.shouldWait && waitInfo.waitMs <= STICKY_COOLDOWN_THRESHOLD_MS) {
+        logger.info(`[AccountManager] Waiting ${formatDuration(waitInfo.waitMs)} for sticky account to preserve cache: ${waitInfo.account.email}`);
+        return { account: null, waitMs: waitInfo.waitMs, newIndex: currentIndex };
+    }
+
+    // If wait is long, CHECK IF OTHERS ARE AVAILABLE before deciding to wait.
     const available = getAvailableAccounts(accounts, modelId);
     if (available.length > 0) {
         // Found a free account! Switch immediately.
@@ -182,8 +196,7 @@ export function pickStickyAccount(accounts, currentIndex, onSave, modelId = null
         }
     }
 
-    // No other accounts available. Now checking if we should wait for current account.
-    const waitInfo = shouldWaitForCurrentAccount(accounts, currentIndex, modelId);
+    // No other accounts available. Now checking if we should wait for current account (standard threshold).
     if (waitInfo.shouldWait) {
         logger.info(`[AccountManager] Waiting ${formatDuration(waitInfo.waitMs)} for sticky account: ${waitInfo.account.email}`);
         return { account: null, waitMs: waitInfo.waitMs, newIndex: currentIndex };

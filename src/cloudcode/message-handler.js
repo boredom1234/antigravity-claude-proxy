@@ -102,6 +102,8 @@ export async function sendMessage(anthropicRequest, accountManager, fallbackEnab
             }
         }
 
+        accountManager.incrementActiveRequests(account);
+
         try {
             // Get token and project for this account
             const token = await accountManager.getTokenForAccount(account);
@@ -215,6 +217,8 @@ export async function sendMessage(anthropicRequest, accountManager, fallbackEnab
             }
 
             throw error;
+        } finally {
+            accountManager.decrementActiveRequests(account);
         }
     }
 

@@ -87,6 +87,8 @@ export const MAX_ACCOUNTS = 10; // Maximum number of accounts allowed
 
 // Rate limit wait thresholds
 export const MAX_WAIT_BEFORE_ERROR_MS = 120000; // 2 minutes - throw error if wait exceeds this
+export const STICKY_COOLDOWN_THRESHOLD_MS = 15000; // 15 seconds - wait for sticky account if reset is within this time, even if others are available
+export const MAX_CONCURRENT_REQUESTS = 2; // Maximum concurrent requests per account
 
 // Thinking model constants
 export const MIN_SIGNATURE_LENGTH = 50; // Minimum valid thinking signature length

@@ -205,6 +205,26 @@ export class AccountManager {
     }
 
     /**
+     * Increment active requests for an account
+     * @param {Object} account - Account object
+     */
+    incrementActiveRequests(account) {
+        if (!account) return;
+        account.activeRequests = (account.activeRequests || 0) + 1;
+        logger.debug(`[AccountManager] Account ${account.email} concurrency: ${account.activeRequests}`);
+    }
+
+    /**
+     * Decrement active requests for an account
+     * @param {Object} account - Account object
+     */
+    decrementActiveRequests(account) {
+        if (!account) return;
+        account.activeRequests = Math.max(0, (account.activeRequests || 0) - 1);
+        logger.debug(`[AccountManager] Account ${account.email} concurrency: ${account.activeRequests}`);
+    }
+
+    /**
      * Get OAuth token for an account
      * @param {Object} account - Account object with email and credentials
      * @returns {Promise<string>} OAuth access token
@@ -281,7 +301,8 @@ export class AccountManager {
                 modelRateLimits: a.modelRateLimits || {},
                 isInvalid: a.isInvalid || false,
                 invalidReason: a.invalidReason || null,
-                lastUsed: a.lastUsed
+                lastUsed: a.lastUsed,
+                activeRequests: a.activeRequests || 0
             }))
         };
     }

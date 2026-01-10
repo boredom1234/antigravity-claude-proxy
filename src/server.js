@@ -8,7 +8,7 @@ import express from 'express';
 import cors from 'cors';
 import { sendMessage, sendMessageStream, listModels, getModelQuotas } from './cloudcode/index.js';
 import { forceRefresh } from './auth/token-extractor.js';
-import { REQUEST_BODY_LIMIT } from './constants.js';
+import { REQUEST_BODY_LIMIT, MAX_CONCURRENT_REQUESTS } from './constants.js';
 import { AccountManager } from './account-manager/index.js';
 import { formatDuration } from './utils/helpers.js';
 import { logger } from './utils/logger.js';
@@ -310,16 +310,18 @@ app.get('/account-limits', async (req, res) => {
             // Table 1: Account status
             const accColWidth = 25;
             const statusColWidth = 15;
+            const activeColWidth = 12;
             const lastUsedColWidth = 25;
             const resetColWidth = 25;
 
-            let accHeader = 'Account'.padEnd(accColWidth) + 'Status'.padEnd(statusColWidth) + 'Last Used'.padEnd(lastUsedColWidth) + 'Quota Reset';
+            let accHeader = 'Account'.padEnd(accColWidth) + 'Status'.padEnd(statusColWidth) + 'Active'.padEnd(activeColWidth) + 'Last Used'.padEnd(lastUsedColWidth) + 'Quota Reset';
             lines.push(accHeader);
-            lines.push('─'.repeat(accColWidth + statusColWidth + lastUsedColWidth + resetColWidth));
+            lines.push('─'.repeat(accColWidth + statusColWidth + activeColWidth + lastUsedColWidth + resetColWidth));
 
             for (const acc of status.accounts) {
                 const shortEmail = acc.email.split('@')[0].slice(0, 22);
                 const lastUsed = acc.lastUsed ? new Date(acc.lastUsed).toLocaleString() : 'never';
+                const activeStr = `${acc.activeRequests || 0}/${MAX_CONCURRENT_REQUESTS}`;
 
                 // Get status and error from accountLimits
                 const accLimit = accountLimits.find(a => a.email === acc.email);
@@ -350,7 +352,7 @@ app.get('/account-limits', async (req, res) => {
                     ? new Date(quota.resetTime).toLocaleString()
                     : '-';
 
-                let row = shortEmail.padEnd(accColWidth) + accStatus.padEnd(statusColWidth) + lastUsed.padEnd(lastUsedColWidth) + resetTime;
+                let row = shortEmail.padEnd(accColWidth) + accStatus.padEnd(statusColWidth) + activeStr.padEnd(activeColWidth) + lastUsed.padEnd(lastUsedColWidth) + resetTime;
 
                 // Add error on next line if present
                 if (accLimit?.error) {
@@ -410,30 +412,37 @@ app.get('/account-limits', async (req, res) => {
         }
 
         // Default: JSON format
+        const status = accountManager.getStatus();
+
         res.json({
             timestamp: new Date().toLocaleString(),
             totalAccounts: allAccounts.length,
             models: sortedModels,
-            accounts: accountLimits.map(acc => ({
-                email: acc.email,
-                status: acc.status,
-                error: acc.error || null,
-                limits: Object.fromEntries(
-                    sortedModels.map(modelId => {
-                        const quota = acc.models?.[modelId];
-                        if (!quota) {
-                            return [modelId, null];
-                        }
-                        return [modelId, {
-                            remaining: quota.remainingFraction !== null
-                                ? `${Math.round(quota.remainingFraction * 100)}%`
-                                : 'N/A',
-                            remainingFraction: quota.remainingFraction,
-                            resetTime: quota.resetTime || null
-                        }];
-                    })
-                )
-            }))
+            accounts: accountLimits.map(acc => {
+                const statusAcc = status.accounts.find(a => a.email === acc.email);
+                return {
+                    email: acc.email,
+                    activeRequests: statusAcc?.activeRequests || 0,
+                    maxConcurrency: MAX_CONCURRENT_REQUESTS,
+                    status: acc.status,
+                    error: acc.error || null,
+                    limits: Object.fromEntries(
+                        sortedModels.map(modelId => {
+                            const quota = acc.models?.[modelId];
+                            if (!quota) {
+                                return [modelId, null];
+                            }
+                            return [modelId, {
+                                remaining: quota.remainingFraction !== null
+                                    ? `${Math.round(quota.remainingFraction * 100)}%`
+                                    : 'N/A',
+                                remainingFraction: quota.remainingFraction,
+                                resetTime: quota.resetTime || null
+                            }];
+                        })
+                    )
+                };
+            })
         });
     } catch (error) {
         res.status(500).json({

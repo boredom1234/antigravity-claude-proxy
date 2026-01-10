@@ -5,7 +5,7 @@
  * All rate limits are model-specific.
  */
 
-import { DEFAULT_COOLDOWN_MS } from '../constants.js';
+import { DEFAULT_COOLDOWN_MS, MAX_CONCURRENT_REQUESTS } from '../constants.js';
 import { formatDuration } from '../utils/helpers.js';
 import { logger } from '../utils/logger.js';
 
@@ -22,6 +22,10 @@ export function isAllRateLimited(accounts, modelId) {
 
     return accounts.every(acc => {
         if (acc.isInvalid) return true; // Invalid accounts count as unavailable
+
+        // Check concurrency limit
+        if ((acc.activeRequests || 0) >= MAX_CONCURRENT_REQUESTS) return true;
+
         const modelLimits = acc.modelRateLimits || {};
         const limit = modelLimits[modelId];
         return limit && limit.isRateLimited && limit.resetTime > Date.now();
@@ -38,6 +42,9 @@ export function isAllRateLimited(accounts, modelId) {
 export function getAvailableAccounts(accounts, modelId = null) {
     return accounts.filter(acc => {
         if (acc.isInvalid) return false;
+
+        // Check concurrency limit
+        if ((acc.activeRequests || 0) >= MAX_CONCURRENT_REQUESTS) return false;
 
         if (modelId && acc.modelRateLimits && acc.modelRateLimits[modelId]) {
             const limit = acc.modelRateLimits[modelId];

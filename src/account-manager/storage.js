@@ -30,7 +30,8 @@ export async function loadAccounts(configPath = ACCOUNT_CONFIG_PATH) {
             // Reset invalid flag on startup - give accounts a fresh chance to refresh
             isInvalid: false,
             invalidReason: null,
-            modelRateLimits: acc.modelRateLimits || {}
+            modelRateLimits: acc.modelRateLimits || {},
+            activeRequests: 0 // Initialize transient concurrency counter
         }));
 
         const settings = config.settings || {};
@@ -69,7 +70,8 @@ export function loadDefaultAccount(dbPath) {
                 email: authData.email || 'default@antigravity',
                 source: 'database',
                 lastUsed: null,
-                modelRateLimits: {}
+                modelRateLimits: {},
+                activeRequests: 0 // Initialize transient concurrency counter
             };
 
             const tokenCache = new Map();
