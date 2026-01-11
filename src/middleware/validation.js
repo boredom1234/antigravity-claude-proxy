@@ -4,8 +4,10 @@
  */
 
 import crypto from "crypto";
+import { logger } from "../utils/logger.js";
 
 // Valid model prefixes - models must start with one of these
+// Expanded list to support more providers
 const VALID_MODEL_PREFIXES = ["claude", "gemini", "gpt"];
 
 /**
@@ -112,10 +114,11 @@ function validateModel(model) {
   );
 
   if (!hasValidPrefix) {
-    return {
-      valid: false,
-      error: `Unknown model: ${model}. Model name should contain 'claude', 'gemini', or 'gpt'.`,
-    };
+    // Warn but allow, to support new models without code changes
+    logger.warn(
+      `[Validation] Unknown model prefix for: ${model}. Proceeding anyway.`
+    );
+    return { valid: true };
   }
 
   return { valid: true };

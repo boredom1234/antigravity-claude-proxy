@@ -166,10 +166,10 @@ export async function* sendMessageStream(anthropicRequest, accountManager, fallb
                     }
 
                     // Stream the response with retry logic for empty responses
-                    // Uses a for-loop for clearer retry semantics
                     let currentResponse = response;
+                    let emptyRetries = 0;
 
-                    for (let emptyRetries = 0; emptyRetries <= MAX_EMPTY_RESPONSE_RETRIES; emptyRetries++) {
+                    while (emptyRetries <= MAX_EMPTY_RESPONSE_RETRIES) {
                         try {
                             yield* streamSSEResponse(currentResponse, anthropicRequest.model);
                             logger.debug('[CloudCode] Stream completed');
@@ -192,53 +192,52 @@ export async function* sendMessageStream(anthropicRequest, accountManager, fallb
                             logger.warn(`[CloudCode] Empty response, retry ${emptyRetries + 1}/${MAX_EMPTY_RESPONSE_RETRIES} after ${backoffMs}ms...`);
                             await sleep(backoffMs);
 
-                            // Refetch the response
-                            currentResponse = await fetch(url, {
-                                method: 'POST',
-                                headers: buildHeaders(token, model, 'text/event-stream'),
-                                body: JSON.stringify(payload)
-                            });
+                            // Increment retry counter
+                            emptyRetries++;
 
-                            // Handle specific error codes on retry
-                            if (!currentResponse.ok) {
+                            // Refetch the response
+                            // We allow one immediate retry for 5xx errors during refetch
+                            let refetchAttempts = 0;
+                            const maxRefetchAttempts = 2;
+
+                            while (refetchAttempts < maxRefetchAttempts) {
+                                refetchAttempts++;
+
+                                currentResponse = await fetch(url, {
+                                    method: 'POST',
+                                    headers: buildHeaders(token, model, 'text/event-stream'),
+                                    body: JSON.stringify(payload)
+                                });
+
+                                if (currentResponse.ok) {
+                                    break; // Success, proceed to streamSSEResponse in main loop
+                                }
+
                                 const retryErrorText = await currentResponse.text();
 
-                                // Rate limit error - mark account and throw to trigger account switch
+                                // Rate limit error
                                 if (currentResponse.status === 429) {
                                     const resetMs = parseResetTime(currentResponse, retryErrorText);
                                     accountManager.markRateLimited(account.email, resetMs, model);
                                     throw new Error(`429 RESOURCE_EXHAUSTED during retry: ${retryErrorText}`);
                                 }
 
-                                // Auth error - clear caches and throw with recognizable message
+                                // Auth error
                                 if (currentResponse.status === 401) {
                                     accountManager.clearTokenCache(account.email);
                                     accountManager.clearProjectCache(account.email);
                                     throw new Error(`401 AUTH_INVALID during retry: ${retryErrorText}`);
                                 }
 
-                                // For 5xx errors, don't pass to streamer - just continue to next retry
-                                if (currentResponse.status >= 500) {
-                                    logger.warn(`[CloudCode] Retry got ${currentResponse.status}, will retry...`);
-                                    // Don't continue here - let the loop increment and refetch
-                                    // Set currentResponse to null to force refetch at loop start
-                                    emptyRetries--; // Compensate for loop increment since we didn't actually try
+                                // For 5xx errors, wait and try one more time if we haven't exhausted refetchAttempts
+                                if (currentResponse.status >= 500 && refetchAttempts < maxRefetchAttempts) {
+                                    logger.warn(`[CloudCode] Retry got ${currentResponse.status}, waiting 1s before refetching...`);
                                     await sleep(1000);
-                                    // Refetch immediately for 5xx
-                                    currentResponse = await fetch(url, {
-                                        method: 'POST',
-                                        headers: buildHeaders(token, model, 'text/event-stream'),
-                                        body: JSON.stringify(payload)
-                                    });
-                                    if (currentResponse.ok) {
-                                        continue; // Try streaming with new response
-                                    }
-                                    // If still failing, let it fall through to throw
+                                    continue;
                                 }
 
                                 throw new Error(`Empty response retry failed: ${currentResponse.status} - ${retryErrorText}`);
                             }
-                            // Response is OK, loop will continue to try streamSSEResponse
                         }
                     }
 
