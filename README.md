@@ -175,6 +175,23 @@ Or to use Gemini models:
 }
 ```
 
+Or to use GPT-OSS models:
+
+```json
+{
+  "env": {
+    "ANTHROPIC_AUTH_TOKEN": "test",
+    "ANTHROPIC_BASE_URL": "http://localhost:8672",
+    "ANTHROPIC_MODEL": "gpt-oss-120b-medium",
+    "ANTHROPIC_DEFAULT_OPUS_MODEL": "gpt-oss-120b-medium",
+    "ANTHROPIC_DEFAULT_SONNET_MODEL": "gpt-oss-120b-medium",
+    "ANTHROPIC_DEFAULT_HAIKU_MODEL": "gemini-2.5-flash-lite[1m]",
+    "CLAUDE_CODE_SUBAGENT_MODEL": "gpt-oss-120b-medium",
+    "ENABLE_EXPERIMENTAL_MCP_CLI": "true"
+  }
+}
+```
+
 ### Load Environment Variables
 
 Add the proxy settings to your shell profile:
@@ -262,6 +279,12 @@ Then run `claude` for official API or `claude-antigravity` for this proxy.
 | `gemini-3-flash`    | Gemini 3 Flash with thinking    |
 | `gemini-3-pro-low`  | Gemini 3 Pro Low with thinking  |
 | `gemini-3-pro-high` | Gemini 3 Pro High with thinking |
+
+### GPT Models
+
+| Model ID              | Description             |
+| --------------------- | ----------------------- |
+| `gpt-oss-120b-medium` | GPT-OSS 120B Medium     |
 
 Gemini models include full thinking support with `thoughtSignature` handling for multi-turn conversations.
 

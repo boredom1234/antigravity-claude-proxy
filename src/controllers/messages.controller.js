@@ -8,6 +8,9 @@ export const createMessagesController = (accountManager, fallbackEnabled) => {
   return {
     handleMessages: async (req, res, next) => {
       try {
+        // Ensure accounts are loaded
+        await accountManager.initialize();
+
         const {
           model,
           messages,

@@ -50,6 +50,7 @@ export function convertAnthropicToGoogle(anthropicRequest) {
   const modelFamily = getModelFamily(modelName);
   const isClaudeModel = modelFamily === "claude";
   const isGeminiModel = modelFamily === "gemini";
+  const isGptModel = modelFamily === "gpt";
   const isThinking = isThinkingModel(modelName);
 
   const googleRequest = {
@@ -278,7 +279,8 @@ export function convertAnthropicToGoogle(anthropicRequest) {
     const parts = convertContentToParts(
       msgContent,
       isClaudeModel,
-      isGeminiModel
+      isGeminiModel,
+      isGptModel
     );
 
     // SAFETY: Google API requires at least one part per content message
@@ -411,6 +413,17 @@ export function convertAnthropicToGoogle(anthropicRequest) {
     });
 
     googleRequest.tools = [{ functionDeclarations }];
+
+    // Add toolConfig for Claude models to enforce VALIDATED mode
+    // This improves tool use reliability as recommended in auth_repo
+    if (isClaudeModel) {
+      googleRequest.toolConfig = {
+        functionCallingConfig: {
+          mode: "VALIDATED",
+        },
+      };
+    }
+
     logger.debug(
       `[RequestConverter] Tools: ${JSON.stringify(
         googleRequest.tools

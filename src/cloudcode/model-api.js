@@ -15,7 +15,7 @@ import { retryWithBackoff, isRetryableError } from '../utils/retry.js';
  */
 function isSupportedModel(modelId) {
     const family = getModelFamily(modelId);
-    return family === 'claude' || family === 'gemini';
+    return family === 'claude' || family === 'gemini' || family === 'gpt';
 }
 
 /**
