@@ -1,0 +1,437 @@
+<div x-data="dashboard" class="view-container">
+    <!-- Compact Header -->
+    <div class="flex items-center justify-between gap-4 mb-6">
+        <!-- Title with inline subtitle -->
+        <div class="flex items-baseline gap-3">
+            <h1 class="text-2xl font-bold text-white tracking-tight" x-text="$store.global.t('dashboard')">
+                Dashboard
+            </h1>
+            <span class="text-[10px] font-mono text-gray-600 uppercase tracking-[0.15em]"
+                  x-text="$store.global.t('systemDesc')">
+                CLAUDE PROXY SYSTEM
+            </span>
+        </div>
+
+        <!-- Compact Status Indicator -->
+        <div class="flex items-center gap-2 px-2.5 py-1.5 rounded-lg bg-space-900/60 border border-space-border/40">
+            <div class="relative flex items-center justify-center">
+                <span class="absolute w-1.5 h-1.5 bg-neon-green rounded-full animate-ping opacity-75"></span>
+                <span class="relative w-1.5 h-1.5 bg-neon-green rounded-full"></span>
+            </div>
+            <span class="text-[10px] font-mono text-gray-500 uppercase tracking-wider">Live</span>
+            <span class="text-gray-700">•</span>
+            <span class="text-[10px] font-mono text-gray-400 tabular-nums"
+                  x-text="new Date().toLocaleTimeString([], {hour: '2-digit', minute: '2-digit', second: '2-digit'})">
+            </span>
+        </div>
+    </div>
+
+    <!-- Stats Grid -->
+    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
+        <div
+            class="stat bg-space-900/40 border border-space-border/30 rounded-xl p-6 hover:border-cyan-500/30 hover:bg-cyan-500/5 transition-all duration-300 group relative cursor-pointer"
+            @click="$store.global.activeTab = 'accounts'"
+            :title="$store.global.t('clickToViewAllAccounts')">
+            <!-- Icon 移到右上角，缩小并变灰 -->
+            <div class="absolute top-3 right-3 text-gray-700/40 group-hover:text-cyan-400/70 transition-colors">
+                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" class="w-5 h-5 stroke-current">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                        d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0z">
+                    </path>
+                </svg>
+            </div>
+            <!-- 数字放大为主角 -->
+            <div class="stat-value text-white font-mono text-4xl font-bold mb-1" x-text="stats.total"></div>
+            <div class="stat-title text-gray-500 font-mono text-xs uppercase tracking-wider truncate"
+                x-text="$store.global.t('totalAccounts')"></div>
+            <div class="stat-desc text-cyan-400/60 text-[10px] truncate flex items-center gap-1">
+                <span x-text="$store.global.t('linkedAccounts')"></span>
+                <svg class="w-3 h-3 opacity-0 group-hover:opacity-100 transition-opacity" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" />
+                </svg>
+            </div>
+            <!-- Subscription Tier Distribution -->
+            <div class="flex items-center gap-2 mt-2 text-[10px] font-mono" x-show="stats.subscription">
+                <template x-if="stats.subscription?.ultra > 0">
+                    <span class="px-1.5 py-0.5 rounded bg-yellow-500/10 text-yellow-400 border border-yellow-500/30">
+                        <span x-text="stats.subscription.ultra"></span> Ultra
+                    </span>
+                </template>
+                <template x-if="stats.subscription?.pro > 0">
+                    <span class="px-1.5 py-0.5 rounded bg-blue-500/10 text-blue-400 border border-blue-500/30">
+                        <span x-text="stats.subscription.pro"></span> Pro
+                    </span>
+                </template>
+                <template x-if="stats.subscription?.free > 0">
+                    <span class="px-1.5 py-0.5 rounded bg-gray-500/10 text-gray-400 border border-gray-500/30">
+                        <span x-text="stats.subscription.free"></span> Free
+                    </span>
+                </template>
+            </div>
+        </div>
+
+        <div
+            class="stat bg-space-900/40 border border-space-border/30 rounded-xl p-6 hover:border-green-500/30 hover:bg-green-500/5 transition-all duration-300 group relative cursor-pointer"
+            @click="$store.global.activeTab = 'models'"
+            :title="$store.global.t('clickToViewModels')">
+            <div class="absolute top-3 right-3 text-gray-700/40 group-hover:text-green-400/70 transition-colors">
+                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" class="w-5 h-5 stroke-current">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                        d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                </svg>
+            </div>
+            <div class="stat-value text-white font-mono text-4xl font-bold mb-1" x-text="stats.active"></div>
+            <div class="stat-title text-gray-500 font-mono text-xs uppercase tracking-wider truncate"
+                x-text="$store.global.t('active')"></div>
+            <div class="stat-desc text-green-400/60 text-[10px] truncate flex items-center gap-1">
+                <span x-text="$store.global.t('operational')"></span>
+                <svg class="w-3 h-3 opacity-0 group-hover:opacity-100 transition-opacity" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" />
+                </svg>
+            </div>
+        </div>
+
+        <div
+            class="stat bg-space-900/40 border border-space-border/30 rounded-xl p-6 hover:border-red-500/30 hover:bg-red-500/5 transition-all duration-300 group relative cursor-pointer"
+            @click="$store.global.activeTab = 'accounts'"
+            :title="$store.global.t('clickToViewLimitedAccounts')">
+            <div class="absolute top-3 right-3 text-gray-700/40 group-hover:text-red-500/70 transition-colors">
+                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" class="w-5 h-5 stroke-current">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                        d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                </svg>
+            </div>
+            <div class="stat-value text-white font-mono text-4xl font-bold mb-1" x-text="stats.limited"></div>
+            <div class="stat-title text-gray-500 font-mono text-xs uppercase tracking-wider truncate"
+                x-text="$store.global.t('rateLimited')"></div>
+            <div class="stat-desc text-red-500/60 text-[10px] truncate flex items-center gap-1">
+                <span x-text="$store.global.t('cooldown')"></span>
+                <svg class="w-3 h-3 opacity-0 group-hover:opacity-100 transition-opacity" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" />
+                </svg>
+            </div>
+        </div>
+
+        <!-- Global Quota Chart -->
+        <div
+            class="stat bg-space-900/40 border border-space-border/30 rounded-xl p-6 col-span-1 lg:col-start-4 lg:row-start-1 h-full flex items-center justify-between gap-3 overflow-hidden relative group hover:border-space-border/60 transition-colors">
+            <!-- Chart Container -->
+            <div class="h-14 w-14 lg:h-16 lg:w-16 relative flex-shrink-0">
+                <canvas id="quotaChart"></canvas>
+                <div class="absolute inset-0 flex items-center justify-center pointer-events-none">
+                    <div class="text-[10px] font-bold text-white font-mono" x-text="stats.overallHealth + '%'">%</div>
+                </div>
+            </div>
+
+            <!-- Legend / Info -->
+            <div class="flex flex-col justify-center gap-2 flex-grow min-w-0">
+                <div class="flex items-center justify-between">
+                    <span class="text-[10px] text-gray-500 uppercase tracking-wider font-mono truncate"
+                        x-text="$store.global.t('globalQuota')">Global Quota</span>
+                </div>
+
+                <!-- Custom Legend -->
+                <div class="space-y-1">
+                    <div class="flex items-center justify-between text-[10px] text-gray-400 cursor-pointer hover:text-neon-purple transition-colors group/legend"
+                        @click="$store.global.activeTab = 'models'; $nextTick(() => { $store.data.filters.family = 'claude'; $store.data.computeQuotaRows(); })"
+                        :title="$store.global.t('clickToFilterClaude')">
+                        <div class="flex items-center gap-1.5 truncate">
+                            <div class="w-1.5 h-1.5 rounded-full bg-neon-purple flex-shrink-0"></div>
+                            <span class="truncate" x-text="$store.global.t('familyClaude')">Claude</span>
+                            <svg class="w-2.5 h-2.5 opacity-0 group-hover/legend:opacity-100 transition-opacity" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" />
+                            </svg>
+                        </div>
+                    </div>
+                    <div class="flex items-center justify-between text-[10px] text-gray-400 cursor-pointer hover:text-neon-green transition-colors group/legend"
+                        @click="$store.global.activeTab = 'models'; $nextTick(() => { $store.data.filters.family = 'gemini'; $store.data.computeQuotaRows(); })"
+                        :title="$store.global.t('clickToFilterGemini')">
+                        <div class="flex items-center gap-1.5 truncate">
+                            <div class="w-1.5 h-1.5 rounded-full bg-neon-green flex-shrink-0"></div>
+                            <span class="truncate" x-text="$store.global.t('familyGemini')">Gemini</span>
+                            <svg class="w-2.5 h-2.5 opacity-0 group-hover/legend:opacity-100 transition-opacity" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" />
+                            </svg>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Usage Trend Chart -->
+    <div class="view-card">
+        <!-- Header with Stats and Filter -->
+        <div class="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-6 mb-8">
+            <div class="flex flex-wrap items-center gap-5">
+                <div class="flex items-center gap-2.5">
+                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor"
+                        class="w-4 h-4 text-neon-purple">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                            d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6"></path>
+                    </svg>
+                    <h3 class="text-xs font-mono text-gray-400 uppercase tracking-widest whitespace-nowrap"
+                        x-text="$store.global.t('requestVolume')">Request Volume</h3>
+                </div>
+
+                <!-- Usage Stats Pills -->
+                <div class="flex flex-wrap gap-2.5 text-[10px] font-mono">
+                    <div class="px-2.5 py-1 rounded bg-space-850 border border-space-border/60 whitespace-nowrap">
+                        <span class="text-gray-500" x-text="$store.global.t('totalColon')">Total:</span>
+                        <span class="text-white ml-1 font-bold" x-text="usageStats.total"></span>
+                    </div>
+                    <div class="px-2.5 py-1 rounded bg-space-850 border border-space-border/60 whitespace-nowrap">
+                        <span class="text-gray-500" x-text="$store.global.t('todayColon')">Today:</span>
+                        <span class="text-neon-cyan ml-1 font-bold" x-text="usageStats.today"></span>
+                    </div>
+                    <div class="px-2.5 py-1 rounded bg-space-850 border border-space-border/60 whitespace-nowrap">
+                        <span class="text-gray-500" x-text="$store.global.t('hour1Colon')">1H:</span>
+                        <span class="text-neon-green ml-1 font-bold" x-text="usageStats.thisHour"></span>
+                    </div>
+                </div>
+            </div>
+
+            <div class="flex items-center gap-3 w-full sm:w-auto justify-end flex-wrap">
+                <!-- Time Range Dropdown -->
+                <div class="relative">
+                    <button @click="showTimeRangeDropdown = !showTimeRangeDropdown; showDisplayModeDropdown = false; showModelFilter = false"
+                        class="flex items-center gap-2 px-3 py-1.5 text-[10px] font-mono text-gray-400 bg-space-800 border border-space-border/50 rounded hover:border-neon-cyan/50 transition-colors whitespace-nowrap">
+                        <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                        </svg>
+                        <span x-text="getTimeRangeLabel()"></span>
+                        <svg class="w-3 h-3 transition-transform" :class="{'rotate-180': showTimeRangeDropdown}" fill="none"
+                            viewBox="0 0 24 24" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
+                        </svg>
+                    </button>
+                    <div x-show="showTimeRangeDropdown" @click.outside="showTimeRangeDropdown = false"
+                        x-transition:enter="transition ease-out duration-100"
+                        x-transition:enter-start="opacity-0 scale-95" x-transition:enter-end="opacity-100 scale-100"
+                        x-transition:leave="transition ease-in duration-75"
+                        x-transition:leave-start="opacity-100 scale-100" x-transition:leave-end="opacity-0 scale-95"
+                        class="absolute right-0 mt-1 w-36 bg-space-900 border border-space-border rounded-lg shadow-xl z-50 overflow-hidden py-1"
+                        style="display: none;">
+                        <button @click="setTimeRange('1h')" class="w-full px-3 py-1.5 text-left text-[10px] font-mono hover:bg-white/5 transition-colors"
+                            :class="timeRange === '1h' ? 'text-neon-cyan' : 'text-gray-400'"
+                            x-text="$store.global.t('last1Hour')"></button>
+                        <button @click="setTimeRange('6h')" class="w-full px-3 py-1.5 text-left text-[10px] font-mono hover:bg-white/5 transition-colors"
+                            :class="timeRange === '6h' ? 'text-neon-cyan' : 'text-gray-400'"
+                            x-text="$store.global.t('last6Hours')"></button>
+                        <button @click="setTimeRange('24h')" class="w-full px-3 py-1.5 text-left text-[10px] font-mono hover:bg-white/5 transition-colors"
+                            :class="timeRange === '24h' ? 'text-neon-cyan' : 'text-gray-400'"
+                            x-text="$store.global.t('last24Hours')"></button>
+                        <button @click="setTimeRange('7d')" class="w-full px-3 py-1.5 text-left text-[10px] font-mono hover:bg-white/5 transition-colors"
+                            :class="timeRange === '7d' ? 'text-neon-cyan' : 'text-gray-400'"
+                            x-text="$store.global.t('last7Days')"></button>
+                        <button @click="setTimeRange('all')" class="w-full px-3 py-1.5 text-left text-[10px] font-mono hover:bg-white/5 transition-colors"
+                            :class="timeRange === 'all' ? 'text-neon-cyan' : 'text-gray-400'"
+                            x-text="$store.global.t('allTime')"></button>
+                    </div>
+                </div>
+
+                <!-- Display Mode Dropdown -->
+                <div class="relative">
+                    <button @click="showDisplayModeDropdown = !showDisplayModeDropdown; showTimeRangeDropdown = false; showModelFilter = false"
+                        class="flex items-center gap-2 px-3 py-1.5 text-[10px] font-mono text-gray-400 bg-space-800 border border-space-border/50 rounded hover:border-neon-purple/50 transition-colors whitespace-nowrap">
+                        <svg class="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
+                        </svg>
+                        <span x-text="displayMode === 'family' ? $store.global.t('family') : $store.global.t('model')"></span>
+                        <svg class="w-3 h-3 transition-transform" :class="{'rotate-180': showDisplayModeDropdown}" fill="none"
+                            viewBox="0 0 24 24" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
+                        </svg>
+                    </button>
+                    <div x-show="showDisplayModeDropdown" @click.outside="showDisplayModeDropdown = false"
+                        x-transition:enter="transition ease-out duration-100"
+                        x-transition:enter-start="opacity-0 scale-95" x-transition:enter-end="opacity-100 scale-100"
+                        x-transition:leave="transition ease-in duration-75"
+                        x-transition:leave-start="opacity-100 scale-100" x-transition:leave-end="opacity-0 scale-95"
+                        class="absolute right-0 mt-1 w-32 bg-space-900 border border-space-border rounded-lg shadow-xl z-50 overflow-hidden py-1"
+                        style="display: none;">
+                        <button @click="setDisplayMode('family')" class="w-full px-3 py-1.5 text-left text-[10px] font-mono hover:bg-white/5 transition-colors"
+                            :class="displayMode === 'family' ? 'text-neon-purple' : 'text-gray-400'"
+                            x-text="$store.global.t('family')"></button>
+                        <button @click="setDisplayMode('model')" class="w-full px-3 py-1.5 text-left text-[10px] font-mono hover:bg-white/5 transition-colors"
+                            :class="displayMode === 'model' ? 'text-neon-purple' : 'text-gray-400'"
+                            x-text="$store.global.t('model')"></button>
+                    </div>
+                </div>
+
+                <!-- Filter Dropdown -->
+                <div class="relative">
+                    <button @click="showModelFilter = !showModelFilter; showTimeRangeDropdown = false; showDisplayModeDropdown = false"
+                        class="flex items-center gap-2 px-3 py-1.5 text-[10px] font-mono text-gray-400 bg-space-800 border border-space-border/50 rounded hover:border-neon-purple/50 transition-colors whitespace-nowrap">
+                        <svg class="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z" />
+                        </svg>
+                        <span x-text="$store.global.t('filter') + ' (' + getSelectedCount() + ')'">Filter (0/0)</span>
+                        <svg class="w-3 h-3 transition-transform" :class="{'rotate-180': showModelFilter}" fill="none"
+                            viewBox="0 0 24 24" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
+                        </svg>
+                    </button>
+
+                    <!-- Dropdown Menu -->
+                    <div x-show="showModelFilter" @click.outside="showModelFilter = false"
+                        x-transition:enter="transition ease-out duration-100"
+                        x-transition:enter-start="opacity-0 scale-95" x-transition:enter-end="opacity-100 scale-100"
+                        x-transition:leave="transition ease-in duration-75"
+                        x-transition:leave-start="opacity-100 scale-100" x-transition:leave-end="opacity-0 scale-95"
+                        class="absolute right-0 mt-1 w-72 bg-space-900 border border-space-border rounded-lg shadow-xl z-50 overflow-hidden"
+                        style="display: none;">
+
+                        <!-- Header -->
+                        <div
+                            class="flex items-center justify-between px-3 py-2 border-b border-space-border/50 bg-space-800/50">
+                            <span class="text-[10px] font-mono text-gray-500 uppercase"
+                                x-text="displayMode === 'family' ? $store.global.t('selectFamilies') : $store.global.t('selectModels')"></span>
+                            <div class="flex gap-1">
+                                <button @click="autoSelectTopN(5)" class="text-[10px] text-neon-purple hover:underline"
+                                    :title="$store.global.t('smartTitle')" x-text="$store.global.t('frequentModels')">
+                                    Smart
+                                </button>
+                                <span class="text-gray-600">|</span>
+                                <button @click="selectAll()" class="text-[10px] text-neon-cyan hover:underline"
+                                    x-text="$store.global.t('all')">All</button>
+                                <span class="text-gray-600">|</span>
+                                <button @click="deselectAll()" class="text-[10px] text-gray-500 hover:underline"
+                                    x-text="$store.global.t('none')">None</button>
+                            </div>
+                        </div>
+
+                        <!-- Hierarchical List -->
+                        <div class="max-h-64 overflow-y-auto p-2 space-y-2">
+                            <template x-for="family in families" :key="family">
+                                <div class="space-y-1">
+                                    <!-- Family Header -->
+                                    <label
+                                        class="flex items-center gap-2 px-2 py-1.5 rounded hover:bg-white/5 cursor-pointer group"
+                                        x-show="displayMode === 'family'">
+                                        <input type="checkbox" :checked="isFamilySelected(family)"
+                                            @change="toggleFamily(family)"
+                                            class="checkbox checkbox-xs checkbox-primary">
+                                        <div class="w-2 h-2 rounded-full flex-shrink-0"
+                                            :style="'background-color:' + getFamilyColor(family)"></div>
+                                        <span class="text-xs text-gray-300 font-medium group-hover:text-white"
+                                            x-text="$store.global.t('family' + family.charAt(0).toUpperCase() + family.slice(1))"></span>
+                                        <span class="text-[10px] text-gray-600 ml-auto"
+                                            x-text="'(' + (modelTree[family] || []).length + ')'"></span>
+                                    </label>
+
+                                    <!-- Family Section Header (Model Mode) -->
+                                    <div class="flex items-center gap-2 px-2 py-1 text-[10px] text-gray-500 uppercase font-bold"
+                                        x-show="displayMode === 'model'">
+                                        <div class="w-1.5 h-1.5 rounded-full"
+                                            :style="'background-color:' + getFamilyColor(family)"></div>
+                                        <span
+                                            x-text="$store.global.t('family' + family.charAt(0).toUpperCase() + family.slice(1))"></span>
+                                    </div>
+
+                                    <!-- Models in Family -->
+                                    <template x-if="displayMode === 'model'">
+                                        <div class="ml-4 space-y-0.5">
+                                            <template x-for="(model, modelIndex) in (modelTree[family] || [])"
+                                                :key="family + ':' + model">
+                                                <label
+                                                    class="flex items-center gap-2 px-2 py-1 rounded hover:bg-white/5 cursor-pointer group">
+                                                    <input type="checkbox" :checked="isModelSelected(family, model)"
+                                                        @change="toggleModel(family, model)"
+                                                        class="checkbox checkbox-xs checkbox-primary">
+                                                    <div class="w-2 h-2 rounded-full flex-shrink-0"
+                                                        :style="'background-color:' + getModelColor(family, modelIndex)">
+                                                    </div>
+                                                    <span class="text-xs text-gray-400 truncate group-hover:text-white"
+                                                        x-text="model"></span>
+                                                </label>
+                                            </template>
+                                        </div>
+                                    </template>
+                                </div>
+                            </template>
+
+                            <!-- Empty State -->
+                            <div x-show="families.length === 0" class="text-center py-4 text-gray-600 text-xs"
+                                x-text="$store.global.t('noDataTracked')">
+                                No data tracked yet
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Dynamic Legend -->
+        <div class="flex flex-wrap gap-3 mb-5"
+            x-show="displayMode === 'family' ? selectedFamilies.length > 0 : Object.values(selectedModels).flat().length > 0">
+            <!-- Family Mode Legend -->
+            <template x-if="displayMode === 'family'">
+                <template x-for="family in selectedFamilies" :key="family">
+                    <div class="flex items-center gap-1.5 text-[10px] font-mono">
+                        <div class="w-2 h-2 rounded-full" :style="'background-color:' + getFamilyColor(family)"></div>
+                        <span class="text-gray-400"
+                            x-text="$store.global.t('family' + family.charAt(0).toUpperCase() + family.slice(1))"></span>
+                    </div>
+                </template>
+            </template>
+            <!-- Model Mode Legend -->
+            <template x-if="displayMode === 'model'">
+                <template x-for="family in families" :key="'legend-' + family">
+                    <template x-for="(model, modelIndex) in (selectedModels[family] || [])" :key="family + ':' + model">
+                        <div class="flex items-center gap-1.5 text-[10px] font-mono">
+                            <div class="w-2 h-2 rounded-full"
+                                :style="'background-color:' + getModelColor(family, modelIndex)"></div>
+                            <span class="text-gray-400" x-text="model"></span>
+                        </div>
+                    </template>
+                </template>
+            </template>
+        </div>
+
+        <!-- Chart -->
+        <div class="h-48 w-full relative">
+            <canvas id="usageTrendChart"></canvas>
+
+            <!-- Overall Loading State -->
+            <div x-show="!stats.hasTrendData"
+                class="absolute inset-0 flex items-center justify-center bg-space-900/50 backdrop-blur-sm z-10"
+                style="display: none;">
+                <div class="text-xs font-mono text-gray-500 flex items-center gap-2">
+                    <span class="loading loading-spinner loading-xs"></span>
+                    <span x-text="$store.global.t('syncing')">SYNCING...</span>
+                </div>
+            </div>
+
+            <!-- Empty State (After Filtering) -->
+            <div x-show="stats.hasTrendData && !hasFilteredTrendData"
+                class="absolute inset-0 flex flex-col items-center justify-center bg-space-900/30 z-10"
+                style="display: none;">
+                <div class="flex flex-col items-center gap-4 animate-fade-in">
+                    <div class="w-12 h-12 rounded-full bg-space-850 flex items-center justify-center text-gray-600 border border-space-border/50">
+                        <svg class="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+                        </svg>
+                    </div>
+                    <div class="text-xs font-mono text-gray-500 text-center">
+                        <p x-text="$store.global.t('noDataTracked')">No data tracked yet</p>
+                        <p class="text-[10px] opacity-60 mt-1" x-text="'[' + getTimeRangeLabel() + ']'"></p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- No Selection State -->
+            <div x-show="stats.hasTrendData && hasFilteredTrendData && (displayMode === 'family' ? selectedFamilies.length === 0 : Object.values(selectedModels).flat().length === 0)"
+                class="absolute inset-0 flex items-center justify-center bg-space-900/30 z-10"
+                style="display: none;">
+                <div class="text-xs font-mono text-gray-500"
+                    x-text="displayMode === 'family' ? $store.global.t('selectFamilies') : $store.global.t('selectModels')">
+                </div>
+            </div>
+        </div>
+    </div>
+</div>

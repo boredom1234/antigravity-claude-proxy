@@ -1,0 +1,107 @@
+/**
+ * Error Handling Utilities
+ * Provides standardized error handling with toast notifications
+ */
+window.ErrorHandler = window.ErrorHandler || {};
+
+/**
+ * Safely execute an async function with error handling
+ * @param {Function} fn - Async function to execute
+ * @param {string} errorMessage - User-friendly error message prefix
+ * @param {object} options - Additional options
+ * @param {boolean} options.rethrow - Whether to rethrow the error after handling (default: false)
+ * @param {Function} options.onError - Custom error handler callback
+ * @returns {Promise<any>} Result of the function or undefined on error
+ */
+window.ErrorHandler.safeAsync = async function(fn, errorMessage = 'Operation failed', options = {}) {
+    const { rethrow = false, onError = null } = options;
+    const store = Alpine.store('global');
+
+    try {
+        return await fn();
+    } catch (error) {
+        // Log error for debugging
+        console.error(`[ErrorHandler] ${errorMessage}:`, error);
+
+        // Show toast notification
+        const fullMessage = `${errorMessage}: ${error.message || 'Unknown error'}`;
+        store.showToast(fullMessage, 'error');
+
+        // Call custom error handler if provided
+        if (onError && typeof onError === 'function') {
+            try {
+                onError(error);
+            } catch (handlerError) {
+                console.error('[ErrorHandler] Custom error handler failed:', handlerError);
+            }
+        }
+
+        // Rethrow if requested
+        if (rethrow) {
+            throw error;
+        }
+
+        return undefined;
+    }
+};
+
+/**
+ * Wrap a component method with error handling
+ * @param {Function} method - Method to wrap
+ * @param {string} errorMessage - Error message prefix
+ * @returns {Function} Wrapped method
+ */
+window.ErrorHandler.wrapMethod = function(method, errorMessage = 'Operation failed') {
+    return async function(...args) {
+        return window.ErrorHandler.safeAsync(
+            () => method.apply(this, args),
+            errorMessage
+        );
+    };
+};
+
+/**
+ * Show a success toast notification
+ * @param {string} message - Success message
+ */
+window.ErrorHandler.showSuccess = function(message) {
+    const store = Alpine.store('global');
+    store.showToast(message, 'success');
+};
+
+/**
+ * Show an info toast notification
+ * @param {string} message - Info message
+ */
+window.ErrorHandler.showInfo = function(message) {
+    const store = Alpine.store('global');
+    store.showToast(message, 'info');
+};
+
+/**
+ * Show an error toast notification
+ * @param {string} message - Error message
+ * @param {Error} error - Optional error object
+ */
+window.ErrorHandler.showError = function(message, error = null) {
+    const store = Alpine.store('global');
+    const fullMessage = error ? `${message}: ${error.message}` : message;
+    store.showToast(fullMessage, 'error');
+};
+
+/**
+ * Validate and execute an API call with error handling
+ * @param {Function} apiCall - Async function that makes the API call
+ * @param {string} successMessage - Message to show on success (optional)
+ * @param {string} errorMessage - Message to show on error
+ * @returns {Promise<any>} API response or undefined on error
+ */
+window.ErrorHandler.apiCall = async function(apiCall, successMessage = null, errorMessage = 'API call failed') {
+    const result = await window.ErrorHandler.safeAsync(apiCall, errorMessage);
+
+    if (result !== undefined && successMessage) {
+        window.ErrorHandler.showSuccess(successMessage);
+    }
+
+    return result;
+};

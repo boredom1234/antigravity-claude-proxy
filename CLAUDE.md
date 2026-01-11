@@ -88,6 +88,9 @@ src/
 │   ├── token-extractor.js      # Legacy token extraction from DB
 │   └── database.js             # SQLite database access
 │
+├── webui/                      # Web Management Interface
+│   └── index.js                # Express router and API endpoints
+│
 ├── cli/                        # CLI tools
 │   └── accounts.js             # Account management CLI
 │
@@ -106,10 +109,33 @@ src/
     └── native-module-helper.js # Auto-rebuild for native modules
 ```
 
+**Frontend Structure (public/):**
+
+```
+public/
+├── index.html                  # Main entry point
+├── js/
+│   ├── app.js                  # Main application logic (Alpine.js)
+│   ├── store.js                # Global state management
+│   ├── components/             # UI Components
+│   │   ├── dashboard.js        # Real-time stats & charts
+│   │   ├── account-manager.js  # Account list & OAuth handling
+│   │   ├── logs-viewer.js      # Live log streaming
+│   │   └── claude-config.js    # CLI settings editor
+│   └── utils/                  # Frontend utilities
+└── views/                      # HTML partials (loaded dynamically)
+    ├── dashboard.html
+    ├── accounts.html
+    ├── settings.html
+    └── logs.html
+```
+
 **Key Modules:**
 
-- **src/server.js**: Express server exposing Anthropic-compatible endpoints (`/v1/messages`, `/v1/models`, `/health`, `/account-limits`)
+- **src/server.js**: Express server exposing Anthropic-compatible endpoints (`/v1/messages`, `/v1/models`, `/health`, `/account-limits`) and mounting WebUI
+- **src/webui/index.js**: WebUI backend handling API routes (`/api/*`) for config, accounts, and logs
 - **src/cloudcode/**: Cloud Code API client with retry/failover logic, streaming and non-streaming support
+  - `model-api.js`: Model listing, quota retrieval (`getModelQuotas()`), and subscription tier detection (`getSubscriptionTier()`)
 - **src/account-manager/**: Multi-account pool with sticky selection, rate limit handling, and automatic cooldown
 - **src/auth/**: Authentication including Google OAuth, token extraction, database access, and auto-rebuild of native modules
 - **src/format/**: Format conversion between Anthropic and Google Generative AI formats
@@ -124,6 +150,17 @@ src/
 - Automatic switch only when rate-limited for > 2 minutes on the current model
 - Session ID derived from first user message hash for cache continuity
 - Account state persisted to `~/.config/antigravity-proxy/accounts.json`
+
+**Account Data Model:**
+Each account object in `accounts.json` contains:
+- **Basic Info**: `email`, `source` (oauth/manual/database), `enabled`, `lastUsed`
+- **Credentials**: `refreshToken` (OAuth) or `apiKey` (manual)
+- **Subscription**: `{ tier, projectId, detectedAt }` - automatically detected via `loadCodeAssist` API
+  - `tier`: 'free' | 'pro' | 'ultra' (detected from `paidTier` or `currentTier`)
+- **Quota**: `{ models: {}, lastChecked }` - model-specific quota cache
+  - `models[modelId]`: `{ remainingFraction, resetTime }` from `fetchAvailableModels` API
+- **Rate Limits**: `modelRateLimits[modelId]` - temporary rate limit state (in-memory during runtime)
+- **Validity**: `isInvalid`, `invalidReason` - tracks accounts needing re-authentication
 
 **Prompt Caching:**
 
@@ -157,6 +194,20 @@ src/
 - On detection, it attempts to rebuild the module using `npm rebuild`
 - If rebuild succeeds, the module is reloaded; if reload fails, a server restart is required
 - Implementation in `src/utils/native-module-helper.js` and lazy loading in `src/auth/database.js`
+
+**Web Management UI:**
+
+- **Stack**: Vanilla JS + Alpine.js + Tailwind CSS (via CDN)
+- **Architecture**: Single Page Application (SPA) with dynamic view loading
+- **State Management**: Alpine.store for global state (accounts, settings, logs)
+- **Features**:
+  - Real-time dashboard with Chart.js visualization and subscription tier distribution
+  - Account list with tier badges (Ultra/Pro/Free) and quota progress bars
+  - OAuth flow handling via popup window
+  - Live log streaming via Server-Sent Events (SSE)
+  - Config editor for both Proxy and Claude CLI (`~/.claude/settings.json`)
+- **Security**: Optional password protection via `WEBUI_PASSWORD` env var
+- **Smart Refresh**: Client-side polling with ±20% jitter and tab visibility detection (3x slower when hidden)
 
 ## Testing Notes
 
@@ -196,6 +247,12 @@ src/
 - `sleep(ms)` - Promise-based delay
 - `isNetworkError(error)` - Check if error is a transient network error
 
+**Data Persistence:**
+- Subscription and quota data are automatically fetched when `/account-limits` is called
+- Updated data is saved to `accounts.json` asynchronously (non-blocking)
+- On server restart, accounts load with last known subscription/quota state
+- Quota is refreshed on each WebUI poll (default: 30s with jitter)
+
 **Logger:** Structured logging via `src/utils/logger.js`:
 
 - `logger.info(msg)` - Standard info (blue)
@@ -205,6 +262,17 @@ src/
 - `logger.debug(msg)` - Debug output (magenta, only when enabled)
 - `logger.setDebug(true)` - Enable debug mode
 - `logger.isDebugEnabled` - Check if debug mode is on
+
+**WebUI APIs:**
+
+- `/api/accounts/*` - Account management (list, add, remove, refresh)
+- `/api/config/*` - Server configuration (read/write)
+- `/api/claude/config` - Claude CLI settings
+- `/api/logs/stream` - SSE endpoint for real-time logs
+- `/api/auth/url` - Generate Google OAuth URL
+- `/account-limits` - Fetch account quotas and subscription data
+  - Returns: `{ accounts: [{ email, subscription: { tier, projectId }, limits: {...} }], models: [...] }`
+  - Query params: `?format=table` (ASCII table) or `?includeHistory=true` (adds usage stats)
 
 ## Maintenance
 

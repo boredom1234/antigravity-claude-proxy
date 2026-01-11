@@ -27,11 +27,15 @@ export async function loadAccounts(configPath = ACCOUNT_CONFIG_PATH) {
         const accounts = (config.accounts || []).map(acc => ({
             ...acc,
             lastUsed: acc.lastUsed || null,
+            enabled: acc.enabled !== false, // Default to true if not specified
             // Reset invalid flag on startup - give accounts a fresh chance to refresh
             isInvalid: false,
             invalidReason: null,
             modelRateLimits: acc.modelRateLimits || {},
-            activeRequests: 0 // Initialize transient concurrency counter
+            activeRequests: 0 // Initialize transient concurrency counter,
+            // New fields for subscription and quota tracking
+            subscription: acc.subscription || { tier: 'unknown', projectId: null, detectedAt: null },
+            quota: acc.quota || { models: {}, lastChecked: null }
         }));
 
         const settings = config.settings || {};
@@ -109,6 +113,7 @@ export async function saveAccounts(configPath, accounts, settings, activeIndex) 
         accounts: accounts.map(acc => ({
             email: acc.email,
             source: acc.source,
+                enabled: acc.enabled !== false, // Persist enabled state
             dbPath: acc.dbPath || null,
             refreshToken: acc.source === 'oauth' ? acc.refreshToken : undefined,
             apiKey: acc.source === 'manual' ? acc.apiKey : undefined,
@@ -117,7 +122,10 @@ export async function saveAccounts(configPath, accounts, settings, activeIndex) 
             isInvalid: acc.isInvalid || false,
             invalidReason: acc.invalidReason || null,
             modelRateLimits: acc.modelRateLimits || {},
-            lastUsed: acc.lastUsed
+            lastUsed: acc.lastUsed,
+                // Persist subscription and quota data
+                subscription: acc.subscription || { tier: 'unknown', projectId: null, detectedAt: null },
+                quota: acc.quota || { models: {}, lastChecked: null }
         })),
         settings: settings,
         activeIndex: activeIndex

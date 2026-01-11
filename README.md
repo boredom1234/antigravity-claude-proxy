@@ -56,62 +56,7 @@ npm start
 
 ## Quick Start
 
-### 1. Add Account(s)
-
-You have two options:
-
-**Option A: Use Antigravity (Single Account)**
-
-If you have Antigravity installed and logged in, the proxy will automatically extract your token. No additional setup needed.
-
-**Option B: Add Google Accounts via OAuth (Recommended for Multi-Account)**
-
-Add one or more Google accounts for load balancing.
-
-#### Desktop/Laptop (with browser)
-
-```bash
-# If installed via npm
-antigravity-claude-proxy accounts add
-
-# If using npx
-npx antigravity-claude-proxy@latest accounts add
-
-# If cloned locally
-npm run accounts:add
-```
-
-This opens your browser for Google OAuth. Sign in and authorize access. Repeat for multiple accounts.
-
-#### Headless Server (Docker, SSH, no desktop)
-
-```bash
-# If installed via npm
-antigravity-claude-proxy accounts add --no-browser
-
-# If using npx
-npx antigravity-claude-proxy@latest accounts add -- --no-browser
-
-# If cloned locally
-npm run accounts:add -- --no-browser
-```
-
-This displays an OAuth URL you can open on another device (phone/laptop). After signing in, copy the redirect URL or authorization code and paste it back into the terminal.
-
-#### Manage accounts
-
-```bash
-# List all accounts
-antigravity-claude-proxy accounts list
-
-# Verify accounts are working
-antigravity-claude-proxy accounts verify
-
-# Interactive account management
-antigravity-claude-proxy accounts
-```
-
-### 2. Start the Proxy Server
+### 1. Start the Proxy Server
 
 ```bash
 # If installed via npm
@@ -125,6 +70,34 @@ npm start
 ```
 
 The server runs on `http://localhost:8672` by default.
+
+### 2. Link Account(s)
+
+Choose one of the following methods to authorize the proxy:
+
+#### **Method A: Web Dashboard (Recommended)**
+
+1. With the proxy running, open `http://localhost:8080` in your browser.
+2. Navigate to the **Accounts** tab and click **Add Account**.
+3. Complete the Google OAuth authorization in the popup window.
+
+#### **Method B: CLI (Desktop or Headless)**
+
+If you prefer the terminal or are on a remote server:
+
+```bash
+# Desktop (opens browser)
+antigravity-claude-proxy accounts add
+
+# Headless (Docker/SSH)
+antigravity-claude-proxy accounts add --no-browser
+```
+
+> For full CLI account management options, run `antigravity-claude-proxy accounts --help`.
+
+#### **Method C: Automatic (Antigravity Users)**
+
+If you have the **Antigravity** app installed and logged in, the proxy will automatically detect your local session. No additional setup is required.
 
 To use a custom port:
 
@@ -147,6 +120,18 @@ curl "http://localhost:8672/account-limits?format=table"
 ## Using with Claude Code CLI
 
 ### Configure Claude Code
+
+You can configure these settings in two ways:
+
+#### **Via Web Console (Recommended)**
+
+1. Open the WebUI at `http://localhost:8080`.
+2. Go to **Settings** → **Claude CLI**.
+3. Select your preferred models and click **Apply to Claude CLI**.
+
+> [!TIP] > **Configuration Precedence**: System environment variables (set in shell profile like `.zshrc`) take precedence over the `settings.json` file. If you use the Web Console to manage settings, ensure you haven't manually exported conflicting variables in your terminal.
+
+#### **Manual Configuration**
 
 Create or edit the Claude Code settings file:
 
@@ -292,11 +277,62 @@ When you add multiple accounts, the proxy automatically:
 - **Invalid account detection**: Accounts needing re-authentication are marked and skipped
 - **Prompt caching support**: Stable session IDs enable cache hits across conversation turns
 
-Check account status anytime:
+Check account status, subscription tiers, and quota anytime:
 
 ```bash
+# Web UI: http://localhost:8080/ (Accounts tab - shows tier badges and quota progress)
+# CLI Table:
 curl "http://localhost:8672/account-limits?format=table"
 ```
+
+#### CLI Management Reference
+
+If you prefer using the terminal for management:
+
+```bash
+# List all accounts
+antigravity-claude-proxy accounts list
+
+# Verify account health
+antigravity-claude-proxy accounts verify
+
+# Interactive CLI menu
+antigravity-claude-proxy accounts
+```
+
+---
+
+## Web Management Console
+
+The proxy includes a built-in, modern web interface for real-time monitoring and configuration. Access the console at: `http://localhost:8080` (default port).
+
+![Antigravity Console](images/webui-dashboard.png)
+
+### Key Features
+
+- **Real-time Dashboard**: Monitor request volume, active accounts, model health, and subscription tier distribution.
+- **Visual Model Quota**: Track per-model usage and next reset times with color-coded progress indicators.
+- **Account Management**: Add/remove Google accounts via OAuth, view subscription tiers (Free/Pro/Ultra) and quota status at a glance.
+- **Claude CLI Configuration**: Edit your `~/.claude/settings.json` directly from the browser.
+- **Live Logs**: Stream server logs with level-based filtering and search.
+- **Advanced Tuning**: Configure retries, timeouts, and debug mode on the fly.
+- **Bilingual Interface**: Full support for English and Chinese (switch via Settings).
+
+---
+
+## Advanced Configuration
+
+While most users can use the default settings, you can tune the proxy behavior via the **Settings → Server** tab in the WebUI or by creating a `config.json` file.
+
+### Configurable Options
+
+- **WebUI Password**: Secure your dashboard with `WEBUI_PASSWORD` env var or in config.
+- **Custom Port**: Change the default `8080` port.
+- **Retry Logic**: Configure `maxRetries`, `retryBaseMs`, and `retryMaxMs`.
+- **Load Balancing**: Adjust `defaultCooldownMs` and `maxWaitBeforeErrorMs`.
+- **Persistence**: Enable `persistTokenCache` to save OAuth sessions across restarts.
+
+Refer to `config.example.json` for a complete list of fields and documentation.
 
 ---
 

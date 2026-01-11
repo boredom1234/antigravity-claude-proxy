@@ -5,6 +5,7 @@
 
 import { homedir, platform, arch } from "os";
 import { join } from "path";
+import { config } from "./config.js";
 
 /**
  * Get the Antigravity database path based on the current platform.
@@ -65,28 +66,35 @@ export const ANTIGRAVITY_HEADERS = {
 // Default project ID if none can be discovered
 export const DEFAULT_PROJECT_ID = "rising-fact-p41fc";
 
-export const TOKEN_REFRESH_INTERVAL_MS = 5 * 60 * 1000; // 5 minutes
-export const REQUEST_BODY_LIMIT = "50mb";
+// Configurable constants - values from config.json take precedence
+export const TOKEN_REFRESH_INTERVAL_MS =
+  config?.tokenCacheTtlMs || 5 * 60 * 1000; // From config or 5 minutes
+export const REQUEST_BODY_LIMIT = config?.requestBodyLimit || "50mb";
 export const ANTIGRAVITY_AUTH_PORT = 9092;
-export const DEFAULT_PORT = 8672;
+export const DEFAULT_PORT = config?.port || 8672;
 
 // Multi-account configuration
-export const ACCOUNT_CONFIG_PATH = join(
+export const ACCOUNT_CONFIG_PATH =
+  config?.accountConfigPath ||
+  join(homedir(), ".config/antigravity-proxy/accounts.json");
+
+// Usage history persistence path
+export const USAGE_HISTORY_PATH = join(
   homedir(),
-  ".config/antigravity-proxy/accounts.json"
+  ".config/antigravity-proxy/usage-history.json"
 );
 
 // Antigravity app database path (for legacy single-account token extraction)
 // Uses platform-specific path detection
 export const ANTIGRAVITY_DB_PATH = getAntigravityDbPath();
 
-export const DEFAULT_COOLDOWN_MS = 10 * 1000; // 10 second default cooldown
-export const MAX_RETRIES = 5; // Max retry attempts across accounts
-export const MAX_EMPTY_RESPONSE_RETRIES = 2; // Max retries for empty API responses
-export const MAX_ACCOUNTS = 10; // Maximum number of accounts allowed
+export const DEFAULT_COOLDOWN_MS = config?.defaultCooldownMs || 10 * 1000; // From config or 10 seconds
+export const MAX_RETRIES = config?.maxRetries || 5; // From config or 5
+export const MAX_EMPTY_RESPONSE_RETRIES = 2; // Max retries for empty API responses (from upstream)
+export const MAX_ACCOUNTS = config?.maxAccounts || 10; // From config or 10
 
 // Rate limit wait thresholds
-export const MAX_WAIT_BEFORE_ERROR_MS = 120000; // 2 minutes - throw error if wait exceeds this
+export const MAX_WAIT_BEFORE_ERROR_MS = config?.maxWaitBeforeErrorMs || 120000; // From config or 2 minutes
 export const STICKY_COOLDOWN_THRESHOLD_MS = 15000; // 15 seconds - wait for sticky account if reset is within this time, even if others are available
 export const MAX_CONCURRENT_REQUESTS = 2; // Maximum concurrent requests per account
 

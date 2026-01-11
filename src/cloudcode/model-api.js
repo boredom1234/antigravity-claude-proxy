@@ -110,3 +110,75 @@ export async function getModelQuotas(token) {
 
     return quotas;
 }
+
+/**
+ * Get subscription tier for an account
+ * Calls loadCodeAssist API to discover project ID and subscription tier
+ *
+ * @param {string} token - OAuth access token
+ * @returns {Promise<{tier: string, projectId: string|null}>} Subscription tier (free/pro/ultra) and project ID
+ */
+export async function getSubscriptionTier(token) {
+    const headers = {
+        'Authorization': `Bearer ${token}`,
+        'Content-Type': 'application/json',
+        ...ANTIGRAVITY_HEADERS
+    };
+
+    for (const endpoint of ANTIGRAVITY_ENDPOINT_FALLBACKS) {
+        try {
+            const url = `${endpoint}/v1internal:loadCodeAssist`;
+            const response = await fetch(url, {
+                method: 'POST',
+                headers,
+                body: JSON.stringify({
+                    metadata: {
+                        ideType: 'IDE_UNSPECIFIED',
+                        platform: 'PLATFORM_UNSPECIFIED',
+                        pluginType: 'GEMINI'
+                    }
+                })
+            });
+
+            if (!response.ok) {
+                logger.warn(`[CloudCode] loadCodeAssist error at ${endpoint}: ${response.status}`);
+                continue;
+            }
+
+            const data = await response.json();
+
+            // Extract project ID
+            let projectId = null;
+            if (typeof data.cloudaicompanionProject === 'string') {
+                projectId = data.cloudaicompanionProject;
+            } else if (data.cloudaicompanionProject?.id) {
+                projectId = data.cloudaicompanionProject.id;
+            }
+
+            // Extract subscription tier (priority: paidTier > currentTier)
+            let tier = 'free';
+            const tierId = data.paidTier?.id || data.currentTier?.id;
+
+            if (tierId) {
+                const lowerTier = tierId.toLowerCase();
+                if (lowerTier.includes('ultra')) {
+                    tier = 'ultra';
+                } else if (lowerTier.includes('pro')) {
+                    tier = 'pro';
+                } else {
+                    tier = 'free';
+                }
+            }
+
+            logger.debug(`[CloudCode] Subscription detected: ${tier}, Project: ${projectId}`);
+
+            return { tier, projectId };
+        } catch (error) {
+            logger.warn(`[CloudCode] loadCodeAssist failed at ${endpoint}:`, error.message);
+        }
+    }
+
+    // Fallback: return default values if all endpoints fail
+    logger.warn('[CloudCode] Failed to detect subscription tier from all endpoints. Defaulting to free.');
+    return { tier: 'free', projectId: null };
+}
