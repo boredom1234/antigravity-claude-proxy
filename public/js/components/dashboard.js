@@ -33,11 +33,8 @@ window.Components.dashboard = () => ({
         // Update stats when dashboard becomes active (skip initial trigger)
         this.$watch('$store.global.activeTab', (val, oldVal) => {
             if (val === 'dashboard' && oldVal !== undefined) {
-                this.$nextTick(() => {
-                    this.updateStats();
-                    this.updateCharts();
-                    this.updateTrendChart();
-                });
+                // Use ensureCharts to handle view loading/transitions
+                this.ensureCharts();
             }
         });
 
@@ -45,7 +42,7 @@ window.Components.dashboard = () => ({
         this.$watch('$store.data.accounts', () => {
             if (this.$store.global.activeTab === 'dashboard') {
                 this.updateStats();
-                this.$nextTick(() => this.updateCharts());
+                this.ensureCharts();
             }
         });
 
@@ -60,18 +57,47 @@ window.Components.dashboard = () => ({
 
         // Initial update if already on dashboard
         if (this.$store.global.activeTab === 'dashboard') {
-            this.$nextTick(() => {
-                this.updateStats();
-                this.updateCharts();
+            this.ensureCharts(); // Use ensureCharts instead of direct calls
 
-                // Load history if already in store
-                const history = Alpine.store('data').usageHistory;
-                if (history && Object.keys(history).length > 0) {
-                    this.historyData = history;
-                    this.processHistory(history);
-                    this.stats.hasTrendData = true;
-                }
-            });
+            // Load history if already in store
+            const history = Alpine.store('data').usageHistory;
+            if (history && Object.keys(history).length > 0) {
+                this.historyData = history;
+                this.processHistory(history);
+                this.stats.hasTrendData = true;
+            }
+        }
+    },
+
+    /**
+     * Reliably ensure charts are rendered by waiting for DOM to be ready
+     * This handles the race condition where Alpine x-show/transition hasn't finished
+     * or the view is still loading via x-load-view
+     */
+    ensureCharts(attempts = 0) {
+        // If user navigated away, stop trying
+        if (this.$store.global.activeTab !== 'dashboard') return;
+
+        const qCanvas = document.getElementById("quotaChart");
+        const tCanvas = document.getElementById("usageTrendChart");
+
+        // Check if canvases exist and have dimensions (are visible)
+        // We need offsetWidth > 0 to imply the element is visible and laid out
+        const isReady = qCanvas && tCanvas &&
+                       qCanvas.offsetWidth > 0 && qCanvas.offsetHeight > 0 &&
+                       tCanvas.offsetWidth > 0 && tCanvas.offsetHeight > 0;
+
+        if (isReady) {
+            // DOM is ready, render everything
+            this.updateStats();
+            this.updateCharts();
+            this.updateTrendChart();
+        } else if (attempts < 50) {
+            // Retry for up to 5 seconds (50 * 100ms)
+            // This covers slow view loading or long transitions
+            setTimeout(() => this.ensureCharts(attempts + 1), 100);
+        } else {
+            console.warn("Dashboard charts failed to initialize: Canvas not ready after timeout");
         }
     },
 

@@ -2,6 +2,7 @@ import { sendMessage, sendMessageStream } from "../cloudcode/index.js";
 import { config } from "../config.js";
 import { DEFAULT_MAX_TOKENS } from "../constants.js";
 import { logger } from "../utils/logger.js";
+import { estimateTokens } from "../utils/helpers.js";
 
 export const createMessagesController = (accountManager, fallbackEnabled) => {
   return {
@@ -63,7 +64,9 @@ export const createMessagesController = (accountManager, fallbackEnabled) => {
         };
 
         logger.info(
-          `[${req.requestId}] Request for model: ${request.model}, stream: ${!!stream}`
+          `[${req.requestId}] Request for model: ${
+            request.model
+          }, stream: ${!!stream}`
         );
 
         // Debug: Log message structure to diagnose tool_use/tool_result ordering
@@ -132,11 +135,28 @@ export const createMessagesController = (accountManager, fallbackEnabled) => {
       }
     },
 
-    countTokens: (req, res, next) => {
-        const error = new Error("Token counting is not implemented. Use /v1/messages with max_tokens or configure your client to skip token counting.");
-        error.type = "not_implemented";
-        error.statusCode = 501;
+    countTokens: async (req, res, next) => {
+      try {
+        const { messages, system } = req.body;
+        let input_tokens = 0;
+
+        if (system) {
+          input_tokens += estimateTokens(system);
+        }
+
+        if (messages) {
+          input_tokens += estimateTokens(messages);
+        }
+
+        // Add a small overhead for message formatting structure (approximate)
+        if (messages && Array.isArray(messages)) {
+          input_tokens += messages.length * 4;
+        }
+
+        res.json({ input_tokens });
+      } catch (error) {
         next(error);
-    }
+      }
+    },
   };
 };
