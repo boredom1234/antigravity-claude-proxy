@@ -22,13 +22,14 @@ import {
   REQUEST_BODY_LIMIT,
   DEFAULT_PORT,
   MODEL_FALLBACK_MAP,
+  DEFAULT_MAX_TOKENS,
 } from "./constants.js";
 import {
   requestIdMiddleware,
   contentTypeMiddleware,
   messagesValidationMiddleware,
 } from "./middleware/validation.js";
-import { createErrorHandler } from "./middleware/error-handler.js";
+import { createErrorHandler, parseError } from "./middleware/error-handler.js";
 import { createModelsController } from "./controllers/models.controller.js";
 import { createSystemController } from "./controllers/system.controller.js";
 import { createMessagesController } from "./controllers/messages.controller.js";
@@ -155,65 +156,6 @@ try {
 
 // Setup usage statistics middleware
 usageStats.setupMiddleware(app);
-
-/**
- * Parse error into appropriate response format
- */
-function parseError(error) {
-  let errorType = "api_error";
-  let statusCode = 500;
-  let errorMessage = error.message;
-
-  if (
-    error.message.includes("401") ||
-    error.message.includes("UNAUTHENTICATED")
-  ) {
-    errorType = "authentication_error";
-    statusCode = 401;
-    errorMessage =
-      "Authentication failed. Make sure Antigravity is running with a valid token.";
-  } else if (
-    error.message.includes("429") ||
-    error.message.includes("RESOURCE_EXHAUSTED") ||
-    error.message.includes("QUOTA_EXHAUSTED")
-  ) {
-    errorType = "invalid_request_error";
-    statusCode = 400;
-
-    const resetMatch = error.message.match(
-      /quota will reset after ([\dh\dm\ds]+)/i
-    );
-    const modelMatch =
-      error.message.match(/Rate limited on ([^.]+)\./) ||
-      error.message.match(/"model":\s*"([^"]+)"/);
-    const model = modelMatch ? modelMatch[1] : "the model";
-
-    if (resetMatch) {
-      errorMessage = `You have exhausted your capacity on ${model}. Quota will reset after ${resetMatch[1]}.`;
-    } else {
-      errorMessage = `You have exhausted your capacity on ${model}. Please wait for your quota to reset.`;
-    }
-  } else if (
-    error.message.includes("invalid_request_error") ||
-    error.message.includes("INVALID_ARGUMENT")
-  ) {
-    errorType = "invalid_request_error";
-    statusCode = 400;
-    const msgMatch = error.message.match(/"message":"([^"]+)"/);
-    if (msgMatch) errorMessage = msgMatch[1];
-  } else if (error.message.includes("All endpoints failed")) {
-    errorType = "api_error";
-    statusCode = 503;
-    errorMessage =
-      "Unable to connect to Claude API. Check that Antigravity is running.";
-  } else if (error.message.includes("PERMISSION_DENIED")) {
-    errorType = "permission_error";
-    statusCode = 403;
-    errorMessage = "Permission denied. Check your Antigravity license.";
-  }
-
-  return { errorType, statusCode, errorMessage };
-}
 
 /**
  * Health check endpoint - Detailed status
@@ -709,7 +651,7 @@ app.post("/v1/messages/count_tokens", (req, res) => {
  * Anthropic-compatible Messages API
  * POST /v1/messages
  */
-app.post("/v1/messages", async (req, res) => {
+app.post("/v1/messages", messagesValidationMiddleware, async (req, res, next) => {
   try {
     // Ensure account manager is initialized
     await ensureInitialized();
@@ -745,7 +687,7 @@ app.post("/v1/messages", async (req, res) => {
       logger.warn(
         `[Server] All accounts rate-limited for ${modelId}. Resetting state for optimistic retry.`
       );
-      accountManager.resetAllRateLimits();
+      accountManager.resetRateLimitsForModel(modelId);
     }
 
     // Validate required fields
@@ -763,7 +705,7 @@ app.post("/v1/messages", async (req, res) => {
     const request = {
       model: modelId,
       messages,
-      max_tokens: max_tokens || 4096,
+      max_tokens: max_tokens || DEFAULT_MAX_TOKENS,
       stream,
       system,
       tools,
@@ -822,16 +764,8 @@ app.post("/v1/messages", async (req, res) => {
         res.end();
       } catch (streamError) {
         logger.error("[API] Stream error:", streamError);
-
-        const { errorType, errorMessage } = parseError(streamError);
-
-        res.write(
-          `event: error\ndata: ${JSON.stringify({
-            type: "error",
-            error: { type: errorType, message: errorMessage },
-          })}\n\n`
-        );
-        res.end();
+        // Delegate to central error handler which handles SSE errors if headers sent
+        return next(streamError);
       }
     } else {
       // Handle non-streaming response

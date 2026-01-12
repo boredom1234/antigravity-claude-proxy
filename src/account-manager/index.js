@@ -12,6 +12,7 @@ import {
     getInvalidAccounts as getInvalid,
     clearExpiredLimits as clearLimits,
     resetAllRateLimits as resetLimits,
+    resetRateLimitsForModel as resetModelLimits,
     markRateLimited as markLimited,
     markInvalid as markAccountInvalid,
     getMinWaitTimeMs as getMinWait
@@ -258,6 +259,15 @@ export class AccountManager {
     }
 
     /**
+     * Clear rate limits for a specific model (optimistic retry strategy)
+     * @param {string} modelId - Model ID
+     * @param {string} [quotaType] - Optional quota type
+     */
+    resetRateLimitsForModel(modelId, quotaType = null) {
+        resetModelLimits(this.#accounts, modelId, quotaType);
+    }
+
+    /**
      * Pick the next available account (fallback when current is unavailable).
      * Sets activeIndex to the selected account's index.
      * @param {string} [modelId] - Optional model ID
@@ -302,9 +312,18 @@ export class AccountManager {
      * @returns {{account: Object|null, waitMs: number}} Account to use and optional wait time
      */
     pickStickyAccount(modelId = null, sessionId = null) {
+        // Manage session map LRU (Least Recently Used) behavior
+        // If sessionId is provided and exists, move it to the end (mark as recently used)
+        if (sessionId && this.#sessionMap.has(sessionId)) {
+            const email = this.#sessionMap.get(sessionId);
+            this.#sessionMap.delete(sessionId);
+            this.#sessionMap.set(sessionId, email);
+        }
+
         // Prune session map if it grows too large (prevent memory leaks)
         if (this.#sessionMap.size > 1000) {
-            // Remove the first 200 entries (oldest insertion order)
+            // Map keys iterate in insertion order. The first key is the oldest (LRU).
+            // Remove the first 200 entries to maintain size
             let count = 0;
             for (const key of this.#sessionMap.keys()) {
                 if (count++ > 200) break;

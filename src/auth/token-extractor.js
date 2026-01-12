@@ -27,13 +27,14 @@ async function extractChatParams() {
 
         // Find the base64-encoded chatParams in the HTML
         // Handles both single and double quotes, and flexible spacing
-        const match = html.match(/window\.chatParams\s*=\s*['"]([^'"]+)['"]/);
+        // Improved regex to ensure matching quotes and handle potential variations
+        const match = html.match(/window\.chatParams\s*=\s*(['"])(.*?)\1/);
         if (!match) {
             throw new Error('Could not find chatParams in Antigravity page');
         }
 
         // Decode base64
-        const base64Data = match[1];
+        const base64Data = match[2];
         const jsonString = Buffer.from(base64Data, 'base64').toString('utf-8');
         const config = JSON.parse(jsonString);
 
@@ -68,7 +69,11 @@ async function getTokenData() {
     try {
         const pageData = await extractChatParams();
         if (pageData?.apiKey) {
-            logger.warn('[Token] Got token from HTML page (may be stale)');
+            logger.warn('----------------------------------------------------------------');
+            logger.warn('[Token] WARNING: Using fallback HTML token extraction.');
+            logger.warn('[Token] This method is fragile and may break in future updates.');
+            logger.warn('[Token] Ensure you are logged in to Antigravity.');
+            logger.warn('----------------------------------------------------------------');
             return pageData;
         }
     } catch (err) {

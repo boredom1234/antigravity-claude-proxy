@@ -5,10 +5,14 @@
 
 import crypto from "crypto";
 import { logger } from "../utils/logger.js";
-
-// Valid model prefixes - models must start with one of these
-// Expanded list to support more providers
-const VALID_MODEL_PREFIXES = ["claude", "gemini", "gpt"];
+import {
+  VALID_MODEL_PREFIXES,
+  MIN_TEMPERATURE,
+  MAX_TEMPERATURE,
+  MIN_TOP_P,
+  MAX_TOP_P,
+  MIN_TOP_K,
+} from "../constants.js";
 
 /**
  * Generate a unique request ID
@@ -170,24 +174,30 @@ export function validateMessagesRequest(body) {
   if (body.temperature !== undefined) {
     if (
       typeof body.temperature !== "number" ||
-      body.temperature < 0 ||
-      body.temperature > 2
+      body.temperature < MIN_TEMPERATURE ||
+      body.temperature > MAX_TEMPERATURE
     ) {
-      errors.push("temperature must be a number between 0 and 2");
+      errors.push(
+        `temperature must be a number between ${MIN_TEMPERATURE} and ${MAX_TEMPERATURE}`
+      );
     }
   }
 
   // Validate top_p (optional)
   if (body.top_p !== undefined) {
-    if (typeof body.top_p !== "number" || body.top_p < 0 || body.top_p > 1) {
-      errors.push("top_p must be a number between 0 and 1");
+    if (
+      typeof body.top_p !== "number" ||
+      body.top_p < MIN_TOP_P ||
+      body.top_p > MAX_TOP_P
+    ) {
+      errors.push(`top_p must be a number between ${MIN_TOP_P} and ${MAX_TOP_P}`);
     }
   }
 
   // Validate top_k (optional)
   if (body.top_k !== undefined) {
-    if (typeof body.top_k !== "number" || body.top_k < 1) {
-      errors.push("top_k must be a positive integer");
+    if (typeof body.top_k !== "number" || body.top_k < MIN_TOP_K) {
+      errors.push(`top_k must be a positive integer (>= ${MIN_TOP_K})`);
     }
   }
 

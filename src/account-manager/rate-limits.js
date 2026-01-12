@@ -125,6 +125,52 @@ export function clearExpiredLimits(accounts) {
 }
 
 /**
+ * Clear rate limits for a specific model (optimistic retry strategy)
+ * Only clears limits that match the model ID (and optional quota type)
+ *
+ * @param {Array} accounts - Array of account objects
+ * @param {string} modelId - Model ID to clear limits for
+ * @param {string} [quotaType] - Optional quota type
+ */
+export function resetRateLimitsForModel(accounts, modelId, quotaType = null) {
+  const quotaKey = quotaType ? `${modelId}:${quotaType}` : modelId;
+  let clearedCount = 0;
+
+  for (const account of accounts) {
+    if (account.modelRateLimits) {
+      // Check for exact match or prefix match (if modelId is generic)
+      // Actually, we usually want exact match for the key we are blocked on.
+
+      // If we have a specific key, just clear that.
+      if (account.modelRateLimits[quotaKey]) {
+        account.modelRateLimits[quotaKey] = {
+          isRateLimited: false,
+          resetTime: null,
+        };
+        clearedCount++;
+      }
+
+      // Also check if there are other quota types for the same model if quotaType is null
+      if (!quotaType) {
+         for (const key of Object.keys(account.modelRateLimits)) {
+             if (key === modelId || key.startsWith(`${modelId}:`)) {
+                 account.modelRateLimits[key] = {
+                    isRateLimited: false,
+                    resetTime: null,
+                 };
+                 clearedCount++;
+             }
+         }
+      }
+    }
+  }
+
+  if (clearedCount > 0) {
+      logger.warn(`[AccountManager] Reset ${clearedCount} rate limits for model ${modelId} (optimistic retry)`);
+  }
+}
+
+/**
  * Clear all rate limits to force a fresh check (optimistic retry strategy)
  *
  * @param {Array} accounts - Array of account objects

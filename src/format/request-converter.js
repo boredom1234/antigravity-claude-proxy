@@ -224,10 +224,12 @@ export function convertAnthropicToGoogle(anthropicRequest) {
           logger.warn(
             `[RequestConverter] Found orphaned tool_result at index ${index}. Converting to text to avoid API error.`
           );
-          // Convert tool_result blocks to text blocks
-          const newContent = msg.content.map((block) => {
+          // Convert tool_result blocks to text blocks (and preserve images)
+          const newContent = msg.content.flatMap((block) => {
             if (block.type === "tool_result") {
-              // Convert to text representation
+              const convertedBlocks = [];
+
+              // Convert text content
               let contentStr = "";
               if (typeof block.content === "string") {
                 contentStr = block.content;
@@ -236,18 +238,26 @@ export function convertAnthropicToGoogle(anthropicRequest) {
                   .filter((c) => c.type === "text")
                   .map((c) => c.text)
                   .join("\n");
-                if (block.content.some((c) => c.type === "image")) {
-                  contentStr += "\n[Image included]";
-                }
               }
-              return {
+
+              convertedBlocks.push({
                 type: "text",
                 text: `[Orphaned Tool Result: ${
                   block.tool_use_id || "unknown"
                 }]\n${contentStr}`,
-              };
+              });
+
+              // Preserve images
+              if (Array.isArray(block.content)) {
+                const images = block.content.filter((c) => c.type === "image");
+                if (images.length > 0) {
+                  convertedBlocks.push(...images);
+                }
+              }
+
+              return convertedBlocks;
             }
-            return block;
+            return [block];
           });
           return { ...msg, content: newContent };
         }

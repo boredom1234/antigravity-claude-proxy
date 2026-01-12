@@ -110,7 +110,7 @@ export async function* sendMessageStream(
           logger.warn(
             "[CloudCode] No account available after wait, attempting optimistic reset..."
           );
-          accountManager.resetAllRateLimits();
+          accountManager.resetRateLimitsForModel(model);
           account = accountManager.pickNext(model);
         }
       }

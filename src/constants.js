@@ -217,6 +217,14 @@ export const MODEL_FALLBACK_MAP = {
   "claude-sonnet-4-5-thinking": "claude-sonnet-4-5",
 };
 
+// Validation Constants
+export const VALID_MODEL_PREFIXES = ["claude", "gemini", "gpt"];
+export const MIN_TEMPERATURE = 0;
+export const MAX_TEMPERATURE = 2;
+export const MIN_TOP_P = 0;
+export const MAX_TOP_P = 1;
+export const MIN_TOP_K = 1;
+
 export default {
   ANTIGRAVITY_ENDPOINT_FALLBACKS,
   ANTIGRAVITY_HEADERS,
@@ -244,4 +252,10 @@ export default {
   OAUTH_REDIRECT_URI,
   MODEL_FALLBACK_MAP,
   ANTIGRAVITY_SYSTEM_INSTRUCTION,
+  VALID_MODEL_PREFIXES,
+  MIN_TEMPERATURE,
+  MAX_TEMPERATURE,
+  MIN_TOP_P,
+  MAX_TOP_P,
+  MIN_TOP_K,
 };
