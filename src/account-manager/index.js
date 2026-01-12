@@ -12,6 +12,7 @@ import {
     getInvalidAccounts as getInvalid,
     clearExpiredLimits as clearLimits,
     resetAllRateLimits as resetLimits,
+    resetRateLimitsForModel as resetModelLimits,
     markRateLimited as markLimited,
     markInvalid as markAccountInvalid,
     getMinWaitTimeMs as getMinWait
@@ -258,6 +259,15 @@ export class AccountManager {
     }
 
     /**
+     * Clear rate limits for a specific model (optimistic retry strategy)
+     * @param {string} modelId - Model ID
+     * @param {string} [quotaType] - Optional quota type
+     */
+    resetRateLimitsForModel(modelId, quotaType = null) {
+        resetModelLimits(this.#accounts, modelId, quotaType);
+    }
+
+    /**
      * Pick the next available account (fallback when current is unavailable).
      * Sets activeIndex to the selected account's index.
      * @param {string} [modelId] - Optional model ID
@@ -302,9 +312,18 @@ export class AccountManager {
      * @returns {{account: Object|null, waitMs: number}} Account to use and optional wait time
      */
     pickStickyAccount(modelId = null, sessionId = null) {
+        // Manage session map LRU (Least Recently Used) behavior
+        // If sessionId is provided and exists, move it to the end (mark as recently used)
+        if (sessionId && this.#sessionMap.has(sessionId)) {
+            const email = this.#sessionMap.get(sessionId);
+            this.#sessionMap.delete(sessionId);
+            this.#sessionMap.set(sessionId, email);
+        }
+
         // Prune session map if it grows too large (prevent memory leaks)
         if (this.#sessionMap.size > 1000) {
-            // Remove the first 200 entries (oldest insertion order)
+            // Map keys iterate in insertion order. The first key is the oldest (LRU).
+            // Remove the first 200 entries to maintain size
             let count = 0;
             for (const key of this.#sessionMap.keys()) {
                 if (count++ > 200) break;
@@ -533,6 +552,94 @@ export class AccountManager {
      */
     getSettings() {
         return { ...this.#settings };
+    }
+
+    /**
+     * Add or update an account
+     * @param {Object} accountData - Account data to add/update
+     * @returns {Promise<void>}
+     */
+    async addAccount(accountData) {
+        if (!accountData.email) {
+            throw new Error('Account email is required');
+        }
+
+        const existingIndex = this.#accounts.findIndex(a => a.email === accountData.email);
+
+        if (existingIndex !== -1) {
+            // Update existing account
+            this.#accounts[existingIndex] = {
+                ...this.#accounts[existingIndex],
+                ...accountData,
+                // Preserve critical state unless explicitly overwritten
+                enabled: accountData.enabled !== undefined ? accountData.enabled : this.#accounts[existingIndex].enabled,
+                isInvalid: false, // Reset invalid state on update
+                invalidReason: null,
+                addedAt: this.#accounts[existingIndex].addedAt || new Date().toISOString()
+            };
+            logger.info(`[AccountManager] Account updated: ${accountData.email}`);
+        } else {
+            // Add new account
+            this.#accounts.push({
+                ...accountData,
+                enabled: true,
+                isInvalid: false,
+                invalidReason: null,
+                modelRateLimits: {},
+                lastUsed: null,
+                addedAt: new Date().toISOString(),
+                subscription: { tier: 'unknown', projectId: null, detectedAt: null },
+                quota: { models: {}, lastChecked: null }
+            });
+            logger.info(`[AccountManager] Account added: ${accountData.email}`);
+        }
+
+        await this.saveToDisk();
+    }
+
+    /**
+     * Remove an account
+     * @param {string} email - Email of the account to remove
+     * @returns {Promise<boolean>} True if account was removed, false if not found
+     */
+    async removeAccount(email) {
+        const index = this.#accounts.findIndex(a => a.email === email);
+        if (index === -1) {
+            return false;
+        }
+
+        this.#accounts.splice(index, 1);
+
+        // Adjust active index if needed
+        if (this.#currentIndex >= this.#accounts.length) {
+            this.#currentIndex = Math.max(0, this.#accounts.length - 1);
+        }
+
+        // Clear caches
+        this.#tokenCache.delete(email);
+        this.#projectCache.delete(email);
+
+        logger.info(`[AccountManager] Account removed: ${email}`);
+        await this.saveToDisk();
+        return true;
+    }
+
+    /**
+     * Enable or disable an account
+     * @param {string} email - Email of the account
+     * @param {boolean} enabled - New enabled state
+     * @returns {Promise<boolean>} True if updated, false if not found
+     */
+    async toggleAccount(email, enabled) {
+        const account = this.#accounts.find(a => a.email === email);
+        if (!account) {
+            return false;
+        }
+
+        account.enabled = enabled;
+        logger.info(`[AccountManager] Account ${email} ${enabled ? 'enabled' : 'disabled'}`);
+        await this.saveToDisk();
+        return true;
     }
 
     /**

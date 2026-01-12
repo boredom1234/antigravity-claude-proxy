@@ -77,7 +77,7 @@ Choose one of the following methods to authorize the proxy:
 
 #### **Method A: Web Dashboard (Recommended)**
 
-1. With the proxy running, open `http://localhost:8080` in your browser.
+1. With the proxy running, open `http://localhost:8672` in your browser.
 2. Navigate to the **Accounts** tab and click **Add Account**.
 3. Complete the Google OAuth authorization in the popup window.
 
@@ -125,7 +125,7 @@ You can configure these settings in two ways:
 
 #### **Via Web Console (Recommended)**
 
-1. Open the WebUI at `http://localhost:8080`.
+1. Open the WebUI at `http://localhost:8672`.
 2. Go to **Settings** → **Claude CLI**.
 3. Select your preferred models and click **Apply to Claude CLI**.
 
@@ -303,7 +303,7 @@ When you add multiple accounts, the proxy automatically:
 Check account status, subscription tiers, and quota anytime:
 
 ```bash
-# Web UI: http://localhost:8080/ (Accounts tab - shows tier badges and quota progress)
+# Web UI: http://localhost:8672/ (Accounts tab - shows tier badges and quota progress)
 # CLI Table:
 curl "http://localhost:8672/account-limits?format=table"
 ```
@@ -327,7 +327,7 @@ antigravity-claude-proxy accounts
 
 ## Web Management Console
 
-The proxy includes a built-in, modern web interface for real-time monitoring and configuration. Access the console at: `http://localhost:8080` (default port).
+The proxy includes a built-in, modern web interface for real-time monitoring and configuration. Access the console at: `http://localhost:8672` (default port).
 
 ![Antigravity Console](images/webui-dashboard.png)
 
@@ -353,10 +353,11 @@ While most users can use the default settings, you can tune the proxy behavior v
 ### Configurable Options
 
 - **WebUI Password**: Secure your dashboard with `WEBUI_PASSWORD` env var or in config.
-- **Custom Port**: Change the default `8080` port.
+- **Custom Port**: Change the default `8672` port.
 - **Retry Logic**: Configure `maxRetries`, `retryBaseMs`, and `retryMaxMs`.
 - **Load Balancing**: Adjust `defaultCooldownMs` and `maxWaitBeforeErrorMs`.
 - **Persistence**: Enable `persistTokenCache` to save OAuth sessions across restarts.
+- **Fallback Mode**: Enable `FALLBACK=true` or `--fallback` to use local Antigravity as a backup when all accounts are rate-limited.
 
 Refer to `config.example.json` for a complete list of fields and documentation.
 
@@ -364,13 +365,14 @@ Refer to `config.example.json` for a complete list of fields and documentation.
 
 ## API Endpoints
 
-| Endpoint          | Method | Description                                                           |
-| ----------------- | ------ | --------------------------------------------------------------------- |
-| `/health`         | GET    | Health check                                                          |
-| `/account-limits` | GET    | Account status and quota limits (add `?format=table` for ASCII table) |
-| `/v1/messages`    | POST   | Anthropic Messages API                                                |
-| `/v1/models`      | GET    | List available models                                                 |
-| `/refresh-token`  | POST   | Force token refresh                                                   |
+| Endpoint             | Method | Description                                                           |
+| -------------------- | ------ | --------------------------------------------------------------------- |
+| `/health`            | GET    | Health check                                                          |
+| `/account-limits`    | GET    | Account status and quota limits (add `?format=table` for ASCII table) |
+| `/v1/messages`       | POST   | Anthropic Messages API                                                |
+| `/v1/models`         | GET    | List available models                                                 |
+| `/api/stats/history` | GET    | Get historical usage statistics                                       |
+| `/refresh-token`     | POST   | Force token refresh                                                   |
 
 ---
 
@@ -512,6 +514,7 @@ npm run dev:full
 ```
 
 **File Structure:**
+
 - `public/css/src/input.css` - Source CSS with Tailwind `@apply` directives (edit this)
 - `public/css/style.css` - Compiled & minified CSS (auto-generated, don't edit)
 - `tailwind.config.js` - Tailwind configuration
@@ -531,6 +534,7 @@ npm start
 #### Project Structure
 
 See [CLAUDE.md](./CLAUDE.md) for detailed architecture documentation, including:
+
 - Request flow and module organization
 - Frontend architecture (Alpine.js + Tailwind)
 - Service layer patterns (`ErrorHandler.withLoading`, `AccountActions`)

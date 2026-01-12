@@ -15,6 +15,7 @@ The proxy translates requests from Anthropic Messages API format → Google Gene
 npm install
 
 # Start server (runs on port 8672)
+# Start server (runs on port 8672)
 npm start
 
 # Start with model fallback enabled (falls back to alternate model when quota exhausted)
@@ -298,14 +299,14 @@ Each account object in `accounts.json` contains:
 
 **Configuration:** Split between static constants and dynamic config:
 
-- **`src/constants.js`**: Static values (API endpoints, headers, default timeouts)
+- **`src/constants.js`**: Static values (API endpoints, headers, default timeouts, model mappings)
 - **`src/config.js`**: Dynamic configuration loaded from `~/.config/antigravity-proxy/config.json` and environment variables
   - Supports hot-reloading for some values
   - Manages `modelMapping` for aliasing and hiding models
 
 **Model Family Handling:**
 
-- `getModelFamily(model)` returns `'claude'` or `'gemini'` based on model name
+- `getModelFamily(model)` returns `'claude'`, `'gemini'`, or `'gpt'` based on model name
 - Claude models use `signature` field on thinking blocks
 - Gemini models use `thoughtSignature` field on functionCall parts (cached or sentinel value)
 - When Claude Code strips `thoughtSignature`, the proxy tries to restore from cache, then falls back to `skip_thought_signature_validator`

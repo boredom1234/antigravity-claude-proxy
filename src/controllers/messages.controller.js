@@ -47,7 +47,7 @@ export const createMessagesController = (accountManager, fallbackEnabled) => {
           logger.warn(
             `[${req.requestId}] All accounts rate-limited for ${modelId}. Resetting state for optimistic retry.`
           );
-          accountManager.resetAllRateLimits();
+          accountManager.resetRateLimitsForModel(modelId);
         }
 
         // Build the request object

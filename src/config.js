@@ -14,6 +14,7 @@ const DEFAULT_CONFIG = {
   persistTokenCache: false,
   defaultCooldownMs: 60000, // 1 minute
   maxWaitBeforeErrorMs: 120000, // 2 minutes
+  geminiHeaderMode: "cli", // 'cli' or 'antigravity'
   maxContextTokens: 60000, // Default to 30k tokens for context window
   modelMapping: {},
 };
@@ -29,6 +30,7 @@ const ENV_MAPPING = {
   PERSIST_TOKEN_CACHE: "persistTokenCache",
   DEFAULT_COOLDOWN_MS: "defaultCooldownMs",
   MAX_WAIT_BEFORE_ERROR_MS: "maxWaitBeforeErrorMs",
+  GEMINI_HEADER_MODE: "geminiHeaderMode",
   MAX_CONTEXT_TOKENS: "maxContextTokens",
 };
 
@@ -87,6 +89,11 @@ function validateConfig(cfg) {
       max: 600000,
       default: DEFAULT_CONFIG.maxWaitBeforeErrorMs,
     },
+    maxContextTokens: {
+      min: 0,
+      max: 10000000,
+      default: DEFAULT_CONFIG.maxContextTokens,
+    },
   };
 
   for (const [key, range] of Object.entries(numericRanges)) {
@@ -120,6 +127,20 @@ function validateConfig(cfg) {
       }`
     );
     validated.logLevel = DEFAULT_CONFIG.logLevel;
+  }
+
+  // Validate geminiHeaderMode
+  const validHeaderModes = ["cli", "antigravity"];
+  if (
+    validated.geminiHeaderMode &&
+    !validHeaderModes.includes(validated.geminiHeaderMode)
+  ) {
+    warnings.push(
+      `geminiHeaderMode must be one of ${validHeaderModes.join(", ")}, got ${
+        validated.geminiHeaderMode
+      }`
+    );
+    validated.geminiHeaderMode = DEFAULT_CONFIG.geminiHeaderMode;
   }
 
   // Validate modelMapping is an object

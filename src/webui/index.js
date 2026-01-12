@@ -16,19 +16,21 @@ import path from "path";
 import { readFileSync } from "fs";
 import { fileURLToPath } from "url";
 import express from "express";
+import fs from "fs";
+import crypto from "crypto";
 import { getPublicConfig, saveConfig, config } from "../config.js";
-import { DEFAULT_PORT } from "../constants.js";
+import { DEFAULT_PORT, ANTIGRAVITY_AUTH_PORT } from "../constants.js";
+import { logger } from "../utils/logger.js";
 import {
   readClaudeConfig,
   updateClaudeConfig,
   replaceClaudeConfig,
   getClaudeConfigPath,
 } from "../utils/claude-config.js";
-import { logger } from "../utils/logger.js";
 import {
   getAuthorizationUrl,
-  completeOAuthFlow,
   startCallbackServer,
+  completeOAuthFlow,
 } from "../auth/oauth.js";
 
 // Get package version
@@ -47,87 +49,70 @@ try {
 // Maps state ID to active OAuth flow data
 const pendingOAuthFlows = new Map();
 
-// Rate limiting for auth attempts (IP -> { count, resetAt })
+// Rate limiting for auth attempts (IP -> { count, lockedUntil })
 const authAttempts = new Map();
-const AUTH_RATE_LIMIT = {
-  maxAttempts: 5, // Max failed attempts
-  windowMs: 60000, // 1 minute window
-  cleanupIntervalMs: 300000, // Cleanup every 5 minutes
-};
+const MAX_AUTH_ATTEMPTS = 5;
+const AUTH_LOCKOUT_MS = 15 * 60 * 1000; // 15 mins
 
 /**
- * Auth Middleware - Optional password protection for WebUI with rate limiting
- * Password can be set via WEBUI_PASSWORD env var or config.json
+ * Authentication Middleware
+ * Protects routes with Basic Auth based on password in config
  */
-function createAuthMiddleware() {
-  // Periodic cleanup of old rate limit entries
-  setInterval(() => {
-    const now = Date.now();
-    for (const [ip, data] of authAttempts.entries()) {
-      if (now > data.resetAt) {
-        authAttempts.delete(ip);
-      }
-    }
-  }, AUTH_RATE_LIMIT.cleanupIntervalMs);
-
+export function createAuthMiddleware() {
   return (req, res, next) => {
-    const password = config.webuiPassword;
-    if (!password) return next();
-
-    // Determine if this path should be protected
-    const isApiRoute = req.path.startsWith("/api/");
-    const isException =
-      req.path === "/api/auth/url" || req.path === "/api/config";
-    const isProtected =
-      (isApiRoute && !isException) ||
-      req.path === "/account-limits" ||
-      req.path === "/health";
-
-    if (isProtected) {
-      const clientIp = req.ip || req.socket.remoteAddress || "unknown";
-
-      // Check rate limit
-      const attempts = authAttempts.get(clientIp);
-      if (
-        attempts &&
-        Date.now() < attempts.resetAt &&
-        attempts.count >= AUTH_RATE_LIMIT.maxAttempts
-      ) {
-        const waitSec = Math.ceil((attempts.resetAt - Date.now()) / 1000);
-        logger.warn(`[WebUI] Rate limited auth attempt from ${clientIp}`);
-        return res.status(429).json({
-          status: "error",
-          error: `Too many failed attempts. Try again in ${waitSec} seconds.`,
-        });
-      }
-
-      const providedPassword =
-        req.headers["x-webui-password"] || req.query.password;
-      if (providedPassword !== password) {
-        // Track failed attempt
-        const now = Date.now();
-        const current = authAttempts.get(clientIp) || {
-          count: 0,
-          resetAt: now + AUTH_RATE_LIMIT.windowMs,
-        };
-        if (now > current.resetAt) {
-          // Window expired, reset
-          current.count = 1;
-          current.resetAt = now + AUTH_RATE_LIMIT.windowMs;
-        } else {
-          current.count++;
-        }
-        authAttempts.set(clientIp, current);
-
-        logger.debug(
-          `[WebUI] Failed auth attempt from ${clientIp} (${current.count}/${AUTH_RATE_LIMIT.maxAttempts})`
-        );
-        return res
-          .status(401)
-          .json({ status: "error", error: "Unauthorized: Password required" });
-      }
+    // If no password set, everything is open
+    if (!config.webuiPassword) {
+      return next();
     }
-    next();
+
+    // Check rate limit
+    const ip = req.ip;
+    const now = Date.now();
+    const state = authAttempts.get(ip);
+
+    if (state && state.lockedUntil > now) {
+      const waitMinutes = Math.ceil((state.lockedUntil - now) / 60000);
+      return res.status(429).json({
+        error: {
+          type: "rate_limit_error",
+          message: `Too many failed attempts. Try again in ${waitMinutes} minutes.`,
+        },
+      });
+    }
+
+    const authHeader = req.headers.authorization;
+
+    if (!authHeader) {
+      res.setHeader("WWW-Authenticate", 'Basic realm="Antigravity WebUI"');
+      return res.sendStatus(401);
+    }
+
+    const auth = Buffer.from(authHeader.split(" ")[1], "base64")
+      .toString()
+      .split(":");
+    const pass = auth[1];
+
+    if (pass === config.webuiPassword) {
+      // Reset attempts on success
+      authAttempts.delete(ip);
+      next();
+    } else {
+      // Record failed attempt
+      const attempts = (state?.count || 0) + 1;
+      if (attempts >= MAX_AUTH_ATTEMPTS) {
+        authAttempts.set(ip, {
+          count: attempts,
+          lockedUntil: now + AUTH_LOCKOUT_MS,
+        });
+        logger.warn(
+          `[Auth] IP ${ip} locked out after ${attempts} failed attempts`
+        );
+      } else {
+        authAttempts.set(ip, { count: attempts, lockedUntil: 0 });
+      }
+      res.setHeader("WWW-Authenticate", 'Basic realm="Antigravity WebUI"');
+      return res.sendStatus(401);
+    }
   };
 }
 
@@ -209,15 +194,7 @@ export function mountWebUI(app, dirname, accountManager) {
     try {
       const { email } = req.params;
       const { enabled } = req.body;
-
-      if (typeof enabled !== "boolean") {
-        return res
-          .status(400)
-          .json({ status: "error", error: "enabled must be a boolean" });
-      }
-
       await accountManager.toggleAccount(email, enabled);
-
       res.json({
         status: "ok",
         message: `Account ${email} ${enabled ? "enabled" : "disabled"}`,
@@ -299,6 +276,8 @@ export function mountWebUI(app, dirname, accountManager) {
         persistTokenCache,
         defaultCooldownMs,
         maxWaitBeforeErrorMs,
+        geminiHeaderMode,
+        maxContextTokens,
       } = req.body;
 
       // Only allow updating specific fields (security)
@@ -345,6 +324,19 @@ export function mountWebUI(app, dirname, accountManager) {
       ) {
         updates.maxWaitBeforeErrorMs = maxWaitBeforeErrorMs;
       }
+      if (
+        geminiHeaderMode &&
+        ["cli", "antigravity"].includes(geminiHeaderMode)
+      ) {
+        updates.geminiHeaderMode = geminiHeaderMode;
+      }
+      if (
+        typeof maxContextTokens === "number" &&
+        maxContextTokens >= 0 &&
+        maxContextTokens <= 10000000
+      ) {
+        updates.maxContextTokens = maxContextTokens;
+      }
 
       if (Object.keys(updates).length === 0) {
         return res.status(400).json({
@@ -358,14 +350,22 @@ export function mountWebUI(app, dirname, accountManager) {
       if (success) {
         res.json({
           status: "ok",
-          message: "Configuration saved. Restart server to apply some changes.",
-          updates: updates,
-          config: getPublicConfig(),
+          message: "Configuration updated",
+          config: {
+            webuiPassword: config.webuiPassword ? "******" : "",
+            debug: config.debug,
+            logLevel: config.logLevel,
+            maxRetries: config.maxRetries,
+            retryBaseMs: config.retryBaseMs,
+            retryMaxMs: config.retryMaxMs,
+            maxContextTokens: config.maxContextTokens,
+            geminiHeaderMode: config.geminiHeaderMode,
+          },
         });
       } else {
         res.status(500).json({
           status: "error",
-          error: "Failed to save configuration file",
+          error: "Failed to save configuration",
         });
       }
     } catch (error) {
@@ -575,12 +575,10 @@ export function mountWebUI(app, dirname, accountManager) {
       }
 
       if (Object.keys(sanitizedConfig).length === 0) {
-        return res
-          .status(400)
-          .json({
-            status: "error",
-            error: "No valid configuration fields provided",
-          });
+        return res.status(400).json({
+          status: "error",
+          error: "No valid configuration fields provided",
+        });
       }
 
       // Load current config

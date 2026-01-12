@@ -43,14 +43,34 @@ function getPlatformUserAgent() {
 }
 
 // Cloud Code API endpoints (in fallback order)
-const ANTIGRAVITY_ENDPOINT_DAILY = "https://daily-cloudcode-pa.googleapis.com";
-const ANTIGRAVITY_ENDPOINT_PROD = "https://cloudcode-pa.googleapis.com";
+export const ANTIGRAVITY_ENDPOINT_DAILY =
+  "https://daily-cloudcode-pa.googleapis.com";
+export const ANTIGRAVITY_ENDPOINT_PROD = "https://cloudcode-pa.googleapis.com";
 
-// Endpoint fallback order (daily → prod)
+// Endpoint fallback order (daily → prod) - used for Antigravity mode
 export const ANTIGRAVITY_ENDPOINT_FALLBACKS = [
   ANTIGRAVITY_ENDPOINT_DAILY,
   ANTIGRAVITY_ENDPOINT_PROD,
 ];
+
+// CLI mode uses prod first, then daily
+export const GEMINI_CLI_ENDPOINT_FALLBACKS = [
+  ANTIGRAVITY_ENDPOINT_PROD,
+  ANTIGRAVITY_ENDPOINT_DAILY,
+];
+
+/**
+ * Get endpoints in correct order based on header mode
+ * CLI mode: prod first (more stable for gemini-cli headers)
+ * Antigravity mode: daily first (sandbox for antigravity headers)
+ * @param {string} headerMode - 'cli' or 'antigravity'
+ * @returns {string[]} Endpoints in fallback order
+ */
+export function getEndpointsForHeaderMode(headerMode) {
+  return headerMode === "cli"
+    ? GEMINI_CLI_ENDPOINT_FALLBACKS
+    : ANTIGRAVITY_ENDPOINT_FALLBACKS;
+}
 
 // Required headers for Antigravity API requests
 export const ANTIGRAVITY_HEADERS = {
@@ -61,6 +81,14 @@ export const ANTIGRAVITY_HEADERS = {
     platform: "PLATFORM_UNSPECIFIED",
     pluginType: "GEMINI",
   }),
+};
+
+// Headers for Gemini CLI models (mimicking google-api-nodejs-client)
+export const GEMINI_CLI_HEADERS = {
+  "User-Agent": "google-api-nodejs-client/9.15.1",
+  "X-Goog-Api-Client": "gl-node/22.17.0",
+  "Client-Metadata":
+    "ideType=IDE_UNSPECIFIED,platform=PLATFORM_UNSPECIFIED,pluginType=GEMINI",
 };
 
 // Default project ID if none can be discovered
@@ -179,18 +207,28 @@ export const OAUTH_REDIRECT_URI = `http://localhost:${OAUTH_CONFIG.callbackPort}
 export const ANTIGRAVITY_SYSTEM_INSTRUCTION = `You are Antigravity, a powerful agentic AI coding assistant designed by the Google Deepmind team working on Advanced Agentic Coding.You are pair programming with a USER to solve their coding task. The task may require creating a new codebase, modifying or debugging an existing codebase, or simply answering a question.**Absolute paths only****Proactiveness**`;
 
 // Model fallback mapping - maps primary model to fallback when quota exhausted
+// Note: Fallbacks are unidirectional to prevent cycles
 export const MODEL_FALLBACK_MAP = {
   "gemini-3-pro-high": "claude-opus-4-5-thinking",
-  "claude-opus-4-5-thinking": "gemini-3-pro-low",
   "gemini-3-pro-low": "claude-sonnet-4-5",
-  "claude-sonnet-4-5-thinking": "gemini-3-flash",
-  "claude-sonnet-4-5": "gemini-3-flash",
-  "gemini-3-flash": null,
+  "gemini-3-flash": "claude-sonnet-4-5-thinking",
+  // Claude models can fallback to each other but not back to Gemini
+  "claude-opus-4-5-thinking": "claude-sonnet-4-5-thinking",
+  "claude-sonnet-4-5-thinking": "claude-sonnet-4-5",
 };
+
+// Validation Constants
+export const VALID_MODEL_PREFIXES = ["claude", "gemini", "gpt"];
+export const MIN_TEMPERATURE = 0;
+export const MAX_TEMPERATURE = 2;
+export const MIN_TOP_P = 0;
+export const MAX_TOP_P = 1;
+export const MIN_TOP_K = 1;
 
 export default {
   ANTIGRAVITY_ENDPOINT_FALLBACKS,
   ANTIGRAVITY_HEADERS,
+  GEMINI_CLI_HEADERS,
   DEFAULT_PROJECT_ID,
   TOKEN_REFRESH_INTERVAL_MS,
   REQUEST_BODY_LIMIT,
@@ -214,4 +252,10 @@ export default {
   OAUTH_REDIRECT_URI,
   MODEL_FALLBACK_MAP,
   ANTIGRAVITY_SYSTEM_INSTRUCTION,
+  VALID_MODEL_PREFIXES,
+  MIN_TEMPERATURE,
+  MAX_TEMPERATURE,
+  MIN_TOP_P,
+  MAX_TOP_P,
+  MIN_TOP_K,
 };
