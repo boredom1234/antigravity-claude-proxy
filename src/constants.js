@@ -207,13 +207,14 @@ export const OAUTH_REDIRECT_URI = `http://localhost:${OAUTH_CONFIG.callbackPort}
 export const ANTIGRAVITY_SYSTEM_INSTRUCTION = `You are Antigravity, a powerful agentic AI coding assistant designed by the Google Deepmind team working on Advanced Agentic Coding.You are pair programming with a USER to solve their coding task. The task may require creating a new codebase, modifying or debugging an existing codebase, or simply answering a question.**Absolute paths only****Proactiveness**`;
 
 // Model fallback mapping - maps primary model to fallback when quota exhausted
+// Note: Fallbacks are unidirectional to prevent cycles
 export const MODEL_FALLBACK_MAP = {
   "gemini-3-pro-high": "claude-opus-4-5-thinking",
   "gemini-3-pro-low": "claude-sonnet-4-5",
   "gemini-3-flash": "claude-sonnet-4-5-thinking",
-  "claude-opus-4-5-thinking": "gemini-3-pro-high",
-  "claude-sonnet-4-5-thinking": "gemini-3-flash",
-  "claude-sonnet-4-5": "gemini-3-flash",
+  // Claude models can fallback to each other but not back to Gemini
+  "claude-opus-4-5-thinking": "claude-sonnet-4-5-thinking",
+  "claude-sonnet-4-5-thinking": "claude-sonnet-4-5",
 };
 
 export default {

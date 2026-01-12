@@ -30,19 +30,21 @@ function buildQuotaKey(modelId, quotaType = null) {
  * @param {string} [quotaType] - Optional quota type to check (e.g., 'cli', 'antigravity')
  * @returns {boolean} True if all enabled accounts are rate limited for the model
  */
-export function isAllRateLimited(modelId, quotaType = null) {
-  const accounts = this.activeAccounts;
+export function isAllRateLimited(accounts, modelId, quotaType = null) {
   if (!accounts || accounts.length === 0) return true;
 
   return accounts.every((acc) => {
-    if (!acc.enabled) return true;
+    // Skip disabled or invalid accounts (they count as "limited" in the sense that they are not available)
+    if (!acc.enabled || acc.isInvalid) return true;
 
     // Check rate limits
     const key = quotaType ? `${modelId}:${quotaType}` : modelId;
-    const isRateLimited = this.modelRateLimits.has(`${acc.email}:${key}`);
+    const limit = acc.modelRateLimits && acc.modelRateLimits[key];
+    const isRateLimited =
+      limit && limit.isRateLimited && limit.resetTime > Date.now();
 
     // Check concurrent requests limit
-    const activeReqs = this.activeRequests.get(acc.email) || 0;
+    const activeReqs = acc.activeRequests || 0;
     const isConcurrencyLimited = activeReqs >= MAX_CONCURRENT_REQUESTS;
 
     return isRateLimited || isConcurrencyLimited;
@@ -220,28 +222,44 @@ export function markInvalid(accounts, email, reason = "Unknown error") {
  * @param {string} [quotaType] - Optional quota type
  * @returns {number} Minimum wait time in ms
  */
-export function getMinWaitTimeMs(modelId, quotaType = null) {
+export function getMinWaitTimeMs(accounts, modelId, quotaType = null) {
   const now = Date.now();
   let minWait = Infinity;
   let activeCount = 0;
 
-  const accounts = this.activeAccounts;
   if (!accounts) return 0;
 
   const key = quotaType ? `${modelId}:${quotaType}` : modelId;
 
   for (const acc of accounts) {
-    if (!acc.enabled) continue;
-    activeCount++;
+    if (!acc.enabled || acc.isInvalid) continue;
 
-    const expiry = this.modelRateLimits.get(`${acc.email}:${key}`);
-    if (expiry) {
-      const wait = expiry - now;
+    // If account is maxed on concurrency, we can't really predict wait time,
+    // but we shouldn't treat it as available (wait=0).
+    // However, if it's NOT rate limited, it might free up instantly.
+    // For now, let's treat concurrency-capped as "check back soon" (default cooldown)
+    // or ignore if we are strictly looking for rate limit resets.
+    // The original logic seemed to focus on rate limit usage.
+
+    const activeReqs = acc.activeRequests || 0;
+    if (activeReqs >= MAX_CONCURRENT_REQUESTS) {
+      // If capped by concurrency, we count it as active but effectively unavailable.
+      // We don't have a specific reset time for concurrency.
+      activeCount++;
+      continue;
+    }
+
+    const limit = acc.modelRateLimits && acc.modelRateLimits[key];
+
+    if (limit && limit.isRateLimited && limit.resetTime > now) {
+      activeCount++;
+      const wait = limit.resetTime - now;
       if (wait > 0 && wait < minWait) {
         minWait = wait;
       }
     } else {
-      // If any account is not rate limited, wait time is 0
+      // If any account is valid, enabled, not concurrency capped, and not rate limited
+      // then wait time is 0.
       return 0;
     }
   }

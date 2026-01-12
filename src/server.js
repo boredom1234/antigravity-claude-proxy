@@ -16,7 +16,7 @@ import {
   getSubscriptionTier,
 } from "./cloudcode/index.js";
 import { mountWebUI } from "./webui/index.js";
-import { config, loadConfig } from "./config.js";
+import { config } from "./config.js";
 import { forceRefresh } from "./auth/token-extractor.js";
 import {
   REQUEST_BODY_LIMIT,
@@ -27,13 +27,11 @@ import {
   requestIdMiddleware,
   contentTypeMiddleware,
   messagesValidationMiddleware,
-  errorHandlerMiddleware,
-} from "./middleware/index.js";
-import {
-  createModelsController,
-  createSystemController,
-  createMessagesController,
-} from "./controllers/index.js";
+} from "./middleware/validation.js";
+import { createErrorHandler } from "./middleware/error-handler.js";
+import { createModelsController } from "./controllers/models.controller.js";
+import { createSystemController } from "./controllers/system.controller.js";
+import { createMessagesController } from "./controllers/messages.controller.js";
 import AccountManager from "./account-manager/index.js";
 import { logger } from "./utils/logger.js";
 import usageStats from "./modules/usage-stats.js";
@@ -50,12 +48,10 @@ let initPromise = null;
  * Initialize the system
  */
 async function initialize() {
-  loadConfig();
   logger.info("[Server] Configuration loaded");
 
   // Initialize account manager
   accountManager = new AccountManager(config.accountConfigPath);
-  await accountManager.loadAccounts();
   await accountManager.initialize();
 
   logger.info(
@@ -909,7 +905,7 @@ app.use((req, res) => {
 });
 
 // Central Error Handler
-app.use(errorHandlerMiddleware);
+app.use(createErrorHandler(accountManager));
 
 /**
  * Start the server
@@ -951,3 +947,4 @@ if (import.meta.url === `file://${process.argv[1]}`) {
 }
 
 export { app, startServer };
+export default app;
