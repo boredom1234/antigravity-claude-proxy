@@ -153,6 +153,9 @@ document.addEventListener("alpine:init", () => {
         port: "Port",
         uiVersion: "UI Version",
         debugMode: "Debug Mode",
+        geminiHeaderMode: "Gemini Header Mode",
+        geminiHeaderModeDesc:
+          "Standard (CLI) or Antigravity (VS Code) compatibility",
         environment: "Environment",
         serverReadOnly:
           "Settings managed via config.json. Restart server to apply changes.",
@@ -274,7 +277,8 @@ document.addEventListener("alpine:init", () => {
         maxWaitDesc:
           "Maximum time to wait for a sticky account to reset before switching.",
         maxContextTokens: "Max Context Tokens",
-        maxContextTokensDesc: "Limit context size to save costs (0 = unlimited).",
+        maxContextTokensDesc:
+          "Limit context size to save costs (0 = unlimited).",
         saveConfigServer: "Save Configuration",
         serverRestartAlert:
           "Changes saved to {path}. Restart server to apply some settings.",
@@ -425,6 +429,8 @@ document.addEventListener("alpine:init", () => {
         port: "端口",
         uiVersion: "UI 版本",
         debugMode: "调试模式",
+        geminiHeaderMode: "Gemini 标头模式",
+        geminiHeaderModeDesc: "标准 (CLI) 或 Antigravity (VS Code) 兼容模式",
         environment: "运行环境",
         serverReadOnly: "配置由 config.json 管理。重启服务器以应用更改。",
         advancedSettings: "高级设置",

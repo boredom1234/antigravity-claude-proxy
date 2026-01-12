@@ -651,176 +651,186 @@ app.post("/v1/messages/count_tokens", (req, res) => {
  * Anthropic-compatible Messages API
  * POST /v1/messages
  */
-app.post("/v1/messages", messagesValidationMiddleware, async (req, res, next) => {
-  try {
-    // Ensure account manager is initialized
-    await ensureInitialized();
+app.post(
+  "/v1/messages",
+  messagesValidationMiddleware,
+  async (req, res, next) => {
+    try {
+      // Ensure account manager is initialized
+      await ensureInitialized();
 
-    const {
-      model,
-      messages,
-      stream,
-      system,
-      max_tokens,
-      tools,
-      tool_choice,
-      thinking,
-      top_p,
-      top_k,
-      temperature,
-    } = req.body;
+      const {
+        model,
+        messages,
+        stream,
+        system,
+        max_tokens,
+        tools,
+        tool_choice,
+        thinking,
+        top_p,
+        top_k,
+        temperature,
+      } = req.body;
 
-    // Resolve model mapping if configured
-    let requestedModel = model || "claude-3-5-sonnet-20241022";
-    const modelMapping = config.modelMapping || {};
-    if (modelMapping[requestedModel] && modelMapping[requestedModel].mapping) {
-      const targetModel = modelMapping[requestedModel].mapping;
-      logger.info(`[Server] Mapping model ${requestedModel} -> ${targetModel}`);
-      requestedModel = targetModel;
-    }
+      // Resolve model mapping if configured
+      let requestedModel = model || "claude-3-5-sonnet-20241022";
+      const modelMapping = config.modelMapping || {};
+      if (
+        modelMapping[requestedModel] &&
+        modelMapping[requestedModel].mapping
+      ) {
+        const targetModel = modelMapping[requestedModel].mapping;
+        logger.info(
+          `[Server] Mapping model ${requestedModel} -> ${targetModel}`
+        );
+        requestedModel = targetModel;
+      }
 
-    const modelId = requestedModel;
+      const modelId = requestedModel;
 
-    // Optimistic Retry: If ALL accounts are rate-limited for this model, reset them to force a fresh check.
-    // If we have some available accounts, we try them first.
-    if (accountManager.isAllRateLimited(modelId)) {
-      logger.warn(
-        `[Server] All accounts rate-limited for ${modelId}. Resetting state for optimistic retry.`
+      // Optimistic Retry Removed: This logic was causing infinite loops of 429s by ignoring cooldowns.
+      // Ideally we should check specific quota types here, but for now we rely on the helper to pick.
+      if (accountManager.isAllRateLimited(modelId)) {
+        logger.warn(
+          `[Server] All accounts rate-limited for ${modelId}. Request may fail if no accounts become available.`
+        );
+      }
+
+      // Validate required fields
+      if (!messages || !Array.isArray(messages)) {
+        return res.status(400).json({
+          type: "error",
+          error: {
+            type: "invalid_request_error",
+            message: "messages is required and must be an array",
+          },
+        });
+      }
+
+      // Build the request object
+      const request = {
+        model: modelId,
+        messages,
+        max_tokens: max_tokens || DEFAULT_MAX_TOKENS,
+        stream,
+        system,
+        tools,
+        tool_choice,
+        thinking,
+        top_p,
+        top_k,
+        temperature,
+      };
+
+      // Determine header mode for Gemini models
+      const isGeminiModel = request.model.toLowerCase().startsWith("gemini");
+      const headerMode = isGeminiModel
+        ? config.geminiHeaderMode || "cli"
+        : "antigravity";
+      logger.info(
+        `[API] Request for model: ${
+          request.model
+        }, stream: ${!!stream}, headers: ${headerMode}`
       );
-      accountManager.resetRateLimitsForModel(modelId);
-    }
 
-    // Validate required fields
-    if (!messages || !Array.isArray(messages)) {
-      return res.status(400).json({
-        type: "error",
-        error: {
-          type: "invalid_request_error",
-          message: "messages is required and must be an array",
-        },
-      });
-    }
+      // Debug: Log message structure to diagnose tool_use/tool_result ordering
+      if (logger.isDebugEnabled) {
+        logger.debug("[API] Message structure:");
+        messages.forEach((msg, i) => {
+          const contentTypes = Array.isArray(msg.content)
+            ? msg.content.map((c) => c.type || "text").join(", ")
+            : typeof msg.content === "string"
+            ? "text"
+            : "unknown";
+          logger.debug(`  [${i}] ${msg.role}: ${contentTypes}`);
+        });
+      }
 
-    // Build the request object
-    const request = {
-      model: modelId,
-      messages,
-      max_tokens: max_tokens || DEFAULT_MAX_TOKENS,
-      stream,
-      system,
-      tools,
-      tool_choice,
-      thinking,
-      top_p,
-      top_k,
-      temperature,
-    };
+      if (stream) {
+        // Handle streaming response
+        res.setHeader("Content-Type", "text/event-stream");
+        res.setHeader("Cache-Control", "no-cache");
+        res.setHeader("Connection", "keep-alive");
+        res.setHeader("X-Accel-Buffering", "no");
 
-    // Determine header mode for Gemini models
-    const isGeminiModel = request.model.toLowerCase().startsWith("gemini");
-    const headerMode = isGeminiModel
-      ? config.geminiHeaderMode || "cli"
-      : "antigravity";
-    logger.info(
-      `[API] Request for model: ${
-        request.model
-      }, stream: ${!!stream}, headers: ${headerMode}`
-    );
+        // Flush headers immediately to start the stream
+        res.flushHeaders();
 
-    // Debug: Log message structure to diagnose tool_use/tool_result ordering
-    if (logger.isDebugEnabled) {
-      logger.debug("[API] Message structure:");
-      messages.forEach((msg, i) => {
-        const contentTypes = Array.isArray(msg.content)
-          ? msg.content.map((c) => c.type || "text").join(", ")
-          : typeof msg.content === "string"
-          ? "text"
-          : "unknown";
-        logger.debug(`  [${i}] ${msg.role}: ${contentTypes}`);
-      });
-    }
-
-    if (stream) {
-      // Handle streaming response
-      res.setHeader("Content-Type", "text/event-stream");
-      res.setHeader("Cache-Control", "no-cache");
-      res.setHeader("Connection", "keep-alive");
-      res.setHeader("X-Accel-Buffering", "no");
-
-      // Flush headers immediately to start the stream
-      res.flushHeaders();
-
-      try {
-        // Use the streaming generator with account manager
-        for await (const event of sendMessageStream(
+        try {
+          // Use the streaming generator with account manager
+          for await (const event of sendMessageStream(
+            request,
+            accountManager,
+            FALLBACK_ENABLED
+          )) {
+            res.write(
+              `event: ${event.type}\ndata: ${JSON.stringify(event)}\n\n`
+            );
+            // Flush after each event for real-time streaming
+            if (res.flush) res.flush();
+          }
+          res.end();
+        } catch (streamError) {
+          logger.error("[API] Stream error:", streamError);
+          // Delegate to central error handler which handles SSE errors if headers sent
+          return next(streamError);
+        }
+      } else {
+        // Handle non-streaming response
+        const response = await sendMessage(
           request,
           accountManager,
           FALLBACK_ENABLED
-        )) {
-          res.write(`event: ${event.type}\ndata: ${JSON.stringify(event)}\n\n`);
-          // Flush after each event for real-time streaming
-          if (res.flush) res.flush();
+        );
+        res.json(response);
+      }
+    } catch (error) {
+      logger.error("[API] Error:", error);
+
+      let { errorType, statusCode, errorMessage } = parseError(error);
+
+      // For auth errors, try to refresh token
+      if (errorType === "authentication_error") {
+        logger.warn("[API] Token might be expired, attempting refresh...");
+        try {
+          accountManager.clearProjectCache();
+          accountManager.clearTokenCache();
+          await forceRefresh();
+          errorMessage =
+            "Token was expired and has been refreshed. Please retry your request.";
+        } catch (refreshError) {
+          errorMessage =
+            "Could not refresh token. Make sure Antigravity is running.";
         }
+      }
+
+      logger.warn(
+        `[API] Returning error response: ${statusCode} ${errorType} - ${errorMessage}`
+      );
+
+      // Check if headers have already been sent (for streaming that failed mid-way)
+      if (res.headersSent) {
+        logger.warn("[API] Headers already sent, writing error as SSE event");
+        res.write(
+          `event: error\ndata: ${JSON.stringify({
+            type: "error",
+            error: { type: errorType, message: errorMessage },
+          })}\n\n`
+        );
         res.end();
-      } catch (streamError) {
-        logger.error("[API] Stream error:", streamError);
-        // Delegate to central error handler which handles SSE errors if headers sent
-        return next(streamError);
-      }
-    } else {
-      // Handle non-streaming response
-      const response = await sendMessage(
-        request,
-        accountManager,
-        FALLBACK_ENABLED
-      );
-      res.json(response);
-    }
-  } catch (error) {
-    logger.error("[API] Error:", error);
-
-    let { errorType, statusCode, errorMessage } = parseError(error);
-
-    // For auth errors, try to refresh token
-    if (errorType === "authentication_error") {
-      logger.warn("[API] Token might be expired, attempting refresh...");
-      try {
-        accountManager.clearProjectCache();
-        accountManager.clearTokenCache();
-        await forceRefresh();
-        errorMessage =
-          "Token was expired and has been refreshed. Please retry your request.";
-      } catch (refreshError) {
-        errorMessage =
-          "Could not refresh token. Make sure Antigravity is running.";
-      }
-    }
-
-    logger.warn(
-      `[API] Returning error response: ${statusCode} ${errorType} - ${errorMessage}`
-    );
-
-    // Check if headers have already been sent (for streaming that failed mid-way)
-    if (res.headersSent) {
-      logger.warn("[API] Headers already sent, writing error as SSE event");
-      res.write(
-        `event: error\ndata: ${JSON.stringify({
+      } else {
+        res.status(statusCode).json({
           type: "error",
-          error: { type: errorType, message: errorMessage },
-        })}\n\n`
-      );
-      res.end();
-    } else {
-      res.status(statusCode).json({
-        type: "error",
-        error: {
-          type: errorType,
-          message: errorMessage,
-        },
-      });
+          error: {
+            type: errorType,
+            message: errorMessage,
+          },
+        });
+      }
     }
   }
-});
+);
 
 // Event Logging (for Cline/WebUI clients)
 app.post("/api/event_logging/batch", (req, res) => {

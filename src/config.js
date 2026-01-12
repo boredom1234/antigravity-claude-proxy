@@ -15,7 +15,7 @@ const DEFAULT_CONFIG = {
   defaultCooldownMs: 60000, // 1 minute
   maxWaitBeforeErrorMs: 120000, // 2 minutes
   geminiHeaderMode: "cli", // 'cli' or 'antigravity'
-  maxContextTokens: 60000, // Default to 30k tokens for context window
+  maxContextTokens: 500000, // Default to 500k tokens for context window
   modelMapping: {},
 };
 
