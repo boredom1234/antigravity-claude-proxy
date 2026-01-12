@@ -72,7 +72,7 @@ npx antigravity-claude-proxy@latest start
 npm start
 ```
 
-The server runs on `http://localhost:8080` by default.
+The server runs on `http://localhost:8672` by default.
 
 ### 2. Link Account(s)
 
@@ -80,7 +80,7 @@ Choose one of the following methods to authorize the proxy:
 
 #### **Method A: Web Dashboard (Recommended)**
 
-1. With the proxy running, open `http://localhost:8080` in your browser.
+1. With the proxy running, open `http://localhost:8672` in your browser.
 2. Navigate to the **Accounts** tab and click **Add Account**.
 3. Complete the Google OAuth authorization in the popup window.
 
@@ -112,10 +112,10 @@ PORT=3001 antigravity-claude-proxy start
 
 ```bash
 # Health check
-curl http://localhost:8080/health
+curl http://localhost:8672/health
 
 # Check account status and quota limits
-curl "http://localhost:8080/account-limits?format=table"
+curl "http://localhost:8672/account-limits?format=table"
 ```
 
 ---
@@ -128,7 +128,7 @@ You can configure these settings in two ways:
 
 #### **Via Web Console (Recommended)**
 
-1. Open the WebUI at `http://localhost:8080`.
+1. Open the WebUI at `http://localhost:8672`.
 2. Go to **Settings** → **Claude CLI**.
 3. Select your preferred models and click **Apply to Claude CLI**.
 
@@ -148,7 +148,7 @@ Add this configuration:
 {
   "env": {
     "ANTHROPIC_AUTH_TOKEN": "test",
-    "ANTHROPIC_BASE_URL": "http://localhost:8080",
+    "ANTHROPIC_BASE_URL": "http://localhost:8672",
     "ANTHROPIC_MODEL": "claude-opus-4-5-thinking",
     "ANTHROPIC_DEFAULT_OPUS_MODEL": "claude-opus-4-5-thinking",
     "ANTHROPIC_DEFAULT_SONNET_MODEL": "claude-sonnet-4-5-thinking",
@@ -167,7 +167,7 @@ Or to use Gemini models:
 {
   "env": {
     "ANTHROPIC_AUTH_TOKEN": "test",
-    "ANTHROPIC_BASE_URL": "http://localhost:8080",
+    "ANTHROPIC_BASE_URL": "http://localhost:8672",
     "ANTHROPIC_MODEL": "gemini-3-pro-high[1m]",
     "ANTHROPIC_DEFAULT_OPUS_MODEL": "gemini-3-pro-high[1m]",
     "ANTHROPIC_DEFAULT_SONNET_MODEL": "gemini-3-flash[1m]",
@@ -185,7 +185,7 @@ Add the proxy settings to your shell profile:
 **macOS / Linux:**
 
 ```bash
-echo 'export ANTHROPIC_BASE_URL="http://localhost:8080"' >> ~/.zshrc
+echo 'export ANTHROPIC_BASE_URL="http://localhost:8672"' >> ~/.zshrc
 echo 'export ANTHROPIC_AUTH_TOKEN="test"' >> ~/.zshrc
 source ~/.zshrc
 ```
@@ -195,7 +195,7 @@ source ~/.zshrc
 **Windows (PowerShell):**
 
 ```powershell
-Add-Content $PROFILE "`n`$env:ANTHROPIC_BASE_URL = 'http://localhost:8080'"
+Add-Content $PROFILE "`n`$env:ANTHROPIC_BASE_URL = 'http://localhost:8672'"
 Add-Content $PROFILE "`$env:ANTHROPIC_AUTH_TOKEN = 'test'"
 . $PROFILE
 ```
@@ -203,7 +203,7 @@ Add-Content $PROFILE "`$env:ANTHROPIC_AUTH_TOKEN = 'test'"
 **Windows (Command Prompt):**
 
 ```cmd
-setx ANTHROPIC_BASE_URL "http://localhost:8080"
+setx ANTHROPIC_BASE_URL "http://localhost:8672"
 setx ANTHROPIC_AUTH_TOKEN "test"
 ```
 
@@ -229,7 +229,7 @@ To run both the official Claude Code and Antigravity version simultaneously, add
 
 ```bash
 # Add to ~/.zshrc or ~/.bashrc
-alias claude-antigravity='CLAUDE_CONFIG_DIR=~/.claude-account-antigravity ANTHROPIC_BASE_URL="http://localhost:8080" ANTHROPIC_AUTH_TOKEN="test" command claude'
+alias claude-antigravity='CLAUDE_CONFIG_DIR=~/.claude-account-antigravity ANTHROPIC_BASE_URL="http://localhost:8672" ANTHROPIC_AUTH_TOKEN="test" command claude'
 ```
 
 **Windows (PowerShell):**
@@ -238,7 +238,7 @@ alias claude-antigravity='CLAUDE_CONFIG_DIR=~/.claude-account-antigravity ANTHRO
 # Add to $PROFILE
 function claude-antigravity {
     $env:CLAUDE_CONFIG_DIR = "$env:USERPROFILE\.claude-account-antigravity"
-    $env:ANTHROPIC_BASE_URL = "http://localhost:8080"
+    $env:ANTHROPIC_BASE_URL = "http://localhost:8672"
     $env:ANTHROPIC_AUTH_TOKEN = "test"
     claude
 }
@@ -283,9 +283,9 @@ When you add multiple accounts, the proxy automatically:
 Check account status, subscription tiers, and quota anytime:
 
 ```bash
-# Web UI: http://localhost:8080/ (Accounts tab - shows tier badges and quota progress)
+# Web UI: http://localhost:8672/ (Accounts tab - shows tier badges and quota progress)
 # CLI Table:
-curl "http://localhost:8080/account-limits?format=table"
+curl "http://localhost:8672/account-limits?format=table"
 ```
 
 #### CLI Management Reference
@@ -307,7 +307,7 @@ antigravity-claude-proxy accounts
 
 ## Web Management Console
 
-The proxy includes a built-in, modern web interface for real-time monitoring and configuration. Access the console at: `http://localhost:8080` (default port).
+The proxy includes a built-in, modern web interface for real-time monitoring and configuration. Access the console at: `http://localhost:8672` (default port).
 
 ![Antigravity Console](images/webui-dashboard.png)
 
@@ -333,7 +333,7 @@ While most users can use the default settings, you can tune the proxy behavior v
 ### Configurable Options
 
 - **WebUI Password**: Secure your dashboard with `WEBUI_PASSWORD` env var or in config.
-- **Custom Port**: Change the default `8080` port.
+- **Custom Port**: Change the default `8672` port.
 - **Retry Logic**: Configure `maxRetries`, `retryBaseMs`, and `retryMaxMs`.
 - **Load Balancing**: Adjust `defaultCooldownMs` and `maxWaitBeforeErrorMs`.
 - **Persistence**: Enable `persistTokenCache` to save OAuth sessions across restarts.
@@ -395,7 +395,7 @@ Or add accounts via OAuth instead: `antigravity-claude-proxy accounts add`
 The token might have expired. Try:
 
 ```bash
-curl -X POST http://localhost:8080/refresh-token
+curl -X POST http://localhost:8672/refresh-token
 ```
 
 Or re-authenticate the account:
@@ -492,6 +492,7 @@ npm run dev:full
 ```
 
 **File Structure:**
+
 - `public/css/src/input.css` - Source CSS with Tailwind `@apply` directives (edit this)
 - `public/css/style.css` - Compiled & minified CSS (auto-generated, don't edit)
 - `tailwind.config.js` - Tailwind configuration
@@ -511,6 +512,7 @@ npm start
 #### Project Structure
 
 See [CLAUDE.md](./CLAUDE.md) for detailed architecture documentation, including:
+
 - Request flow and module organization
 - Frontend architecture (Alpine.js + Tailwind)
 - Service layer patterns (`ErrorHandler.withLoading`, `AccountActions`)

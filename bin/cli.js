@@ -1,15 +1,15 @@
 #!/usr/bin/env node
 
-import { fileURLToPath } from 'url';
-import { dirname, join } from 'path';
-import { readFileSync } from 'fs';
+import { fileURLToPath } from "url";
+import { dirname, join } from "path";
+import { readFileSync } from "fs";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
 // Read package.json for version
 const packageJson = JSON.parse(
-  readFileSync(join(__dirname, '..', 'package.json'), 'utf-8')
+  readFileSync(join(__dirname, "..", "package.json"), "utf-8")
 );
 
 const args = process.argv.slice(2);
@@ -25,7 +25,7 @@ USAGE:
   antigravity-claude-proxy <command> [options]
 
 COMMANDS:
-  start                 Start the proxy server (default port: 8080)
+  start                 Start the proxy server (default port: 8672)
   accounts              Manage Google accounts (interactive)
   accounts add          Add a new Google account via OAuth
   accounts list         List all configured accounts
@@ -38,7 +38,7 @@ OPTIONS:
   --version, -v         Show version number
 
 ENVIRONMENT:
-  PORT                  Server port (default: 8080)
+  PORT                  Server port (default: 8672)
 
 EXAMPLES:
   antigravity-claude-proxy start
@@ -50,7 +50,7 @@ CONFIGURATION:
   Claude Code CLI (~/.claude/settings.json):
     {
       "env": {
-        "ANTHROPIC_BASE_URL": "http://localhost:8080"
+        "ANTHROPIC_BASE_URL": "http://localhost:8672"
       }
     }
 `);
@@ -62,37 +62,37 @@ function showVersion() {
 
 async function main() {
   // Handle flags
-  if (args.includes('--help') || args.includes('-h')) {
+  if (args.includes("--help") || args.includes("-h")) {
     showHelp();
     process.exit(0);
   }
 
-  if (args.includes('--version') || args.includes('-v')) {
+  if (args.includes("--version") || args.includes("-v")) {
     showVersion();
     process.exit(0);
   }
 
   // Handle commands
   switch (command) {
-    case 'start':
+    case "start":
     case undefined:
       // Default to starting the server
-      await import('../src/index.js');
+      await import("../src/index.js");
       break;
 
-    case 'accounts': {
+    case "accounts": {
       // Pass remaining args to accounts CLI
-      const subCommand = args[1] || 'add';
-      process.argv = ['node', 'accounts-cli.js', subCommand, ...args.slice(2)];
-      await import('../src/cli/accounts.js');
+      const subCommand = args[1] || "add";
+      process.argv = ["node", "accounts-cli.js", subCommand, ...args.slice(2)];
+      await import("../src/cli/accounts.js");
       break;
     }
 
-    case 'help':
+    case "help":
       showHelp();
       break;
 
-    case 'version':
+    case "version":
       showVersion();
       break;
 
@@ -104,6 +104,6 @@ async function main() {
 }
 
 main().catch((err) => {
-  console.error('Error:', err.message);
+  console.error("Error:", err.message);
   process.exit(1);
 });

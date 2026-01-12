@@ -212,7 +212,7 @@
                         <div>
                             <div class="text-[11px] text-gray-400 mb-1 font-mono">ANTHROPIC_BASE_URL</div>
                             <input type="text" x-model="config.env.ANTHROPIC_BASE_URL"
-                                placeholder="http://localhost:8080"
+                                placeholder="http://localhost:8672"
                                 class="input input-sm input-bordered !bg-space-800 w-full font-mono text-sm !border-space-border focus:!border-neon-purple !text-white placeholder:!text-gray-600">
                         </div>
                         <div>
@@ -795,9 +795,28 @@
                                 <div
                                     class="w-9 h-5 bg-space-800 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full rtl:peer-checked:after:-translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:start-[2px] after:bg-gray-600 after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-neon-purple peer-checked:after:bg-white">
                                 </div>
-                            </label>
                         </div>
                     </div>
+
+                    <!-- Gemini Header Mode -->
+                    <div class="form-control view-card border-space-border/50 hover:border-neon-purple/50">
+                        <div class="flex items-center justify-between">
+                            <div class="flex flex-col gap-1">
+                                <span class="text-sm font-medium text-gray-200"
+                                    x-text="$store.global.t('geminiHeaderMode')">Gemini Header Mode</span>
+                                <span class="text-[11px] text-gray-500" x-text="$store.global.t('geminiHeaderModeDesc')">Standard (CLI) or Antigravity (VS Code) compatibility</span>
+                            </div>
+                            <div class="join">
+                                <button class="join-item btn btn-xs"
+                                    :class="serverConfig.geminiHeaderMode === 'cli' ? 'btn-primary' : 'btn-ghost'"
+                                    @click="setGeminiHeaderMode('cli')">CLI</button>
+                                <button class="join-item btn btn-xs"
+                                    :class="serverConfig.geminiHeaderMode === 'antigravity' ? 'btn-primary' : 'btn-ghost'"
+                                    @click="setGeminiHeaderMode('antigravity')">Antigravity</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
 
                     <!-- Token Cache -->
                     <div
