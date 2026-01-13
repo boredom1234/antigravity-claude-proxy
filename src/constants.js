@@ -124,7 +124,7 @@ export const MAX_ACCOUNTS = config?.maxAccounts || 10; // From config or 10
 // Rate limit wait thresholds
 export const MAX_WAIT_BEFORE_ERROR_MS = config?.maxWaitBeforeErrorMs || 120000; // From config or 2 minutes
 export const STICKY_COOLDOWN_THRESHOLD_MS = 15000; // 15 seconds - wait for sticky account if reset is within this time, even if others are available
-export const MAX_CONCURRENT_REQUESTS = 2; // Maximum concurrent requests per account
+export const MAX_CONCURRENT_REQUESTS = config?.maxConcurrentRequests || 2; // Maximum concurrent requests per account
 
 // Thinking model constants
 export const MIN_SIGNATURE_LENGTH = 50; // Minimum valid thinking signature length

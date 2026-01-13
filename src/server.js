@@ -36,7 +36,7 @@ import { createMessagesController } from "./controllers/messages.controller.js";
 import AccountManager from "./account-manager/index.js";
 import { logger } from "./utils/logger.js";
 import usageStats from "./modules/usage-stats.js";
-import { formatDuration } from "./utils/helpers.js";
+import { formatDuration, estimateTokens } from "./utils/helpers.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -635,17 +635,36 @@ app.get("/v1/models", async (req, res) => {
 });
 
 /**
- * Count tokens endpoint (not supported)
+ * Count tokens endpoint
  */
 app.post("/v1/messages/count_tokens", (req, res) => {
-  res.status(501).json({
-    type: "error",
-    error: {
-      type: "not_implemented",
-      message:
-        "Token counting is not implemented. Use /v1/messages with max_tokens or configure your client to skip token counting.",
-    },
-  });
+  try {
+    const { messages, system, tools, thinking } = req.body;
+
+    // Estimate tokens for different parts of the request
+    let totalTokens = 0;
+
+    if (messages) totalTokens += estimateTokens(messages);
+    if (system) totalTokens += estimateTokens(system);
+    if (tools) totalTokens += estimateTokens(tools);
+    if (thinking) totalTokens += estimateTokens(thinking);
+
+    // Add some overhead for protocol/format
+    totalTokens += 20;
+
+    res.json({
+      input_tokens: totalTokens
+    });
+  } catch (error) {
+    logger.error("[API] Error counting tokens:", error);
+    res.status(500).json({
+      type: "error",
+      error: {
+        type: "api_error",
+        message: error.message,
+      },
+    });
+  }
 });
 
 /**
@@ -835,7 +854,16 @@ app.post(
 
 // Event Logging (for Cline/WebUI clients)
 app.post("/api/event_logging/batch", (req, res) => {
-  // Silent success for now, logic to be implemented
+  if (logger.isDebugEnabled) {
+    try {
+      const { events } = req.body;
+      if (Array.isArray(events)) {
+        logger.debug(`[EventLog] Received ${events.length} events`);
+      }
+    } catch (err) {
+      // Ignore parsing errors for logging
+    }
+  }
   res.status(200).send("OK");
 });
 
@@ -873,7 +901,7 @@ async function startServer() {
       logger.info("[Server] Shutting down...");
       if (server) server.close();
       if (accountManager) {
-        // cleanup logic
+        await accountManager.cleanup();
       }
       process.exit(0);
     };
@@ -883,6 +911,15 @@ async function startServer() {
   } catch (error) {
     logger.error("[Server] Failed to start:", error);
     process.exit(1);
+  }
+}
+
+/**
+ * Cleanup resources
+ */
+export async function cleanup() {
+  if (accountManager) {
+    await accountManager.cleanup();
   }
 }
 

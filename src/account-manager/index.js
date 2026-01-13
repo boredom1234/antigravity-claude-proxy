@@ -622,6 +622,14 @@ export class AccountManager {
   getAllAccounts() {
     return this.#accounts;
   }
+
+  /**
+   * Cleanup resources and ensure state is saved
+   */
+  async cleanup() {
+    logger.info("[AccountManager] Cleaning up...");
+    await this.saveToDisk();
+  }
 }
 
 export default AccountManager;

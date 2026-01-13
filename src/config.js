@@ -16,6 +16,7 @@ const DEFAULT_CONFIG = {
   maxWaitBeforeErrorMs: 120000, // 2 minutes
   geminiHeaderMode: "cli", // 'cli' or 'antigravity'
   maxContextTokens: 500000, // Default to 500k tokens for context window
+  maxConcurrentRequests: 2, // Default concurrent requests per account
   modelMapping: {},
 };
 
@@ -32,6 +33,7 @@ const ENV_MAPPING = {
   MAX_WAIT_BEFORE_ERROR_MS: "maxWaitBeforeErrorMs",
   GEMINI_HEADER_MODE: "geminiHeaderMode",
   MAX_CONTEXT_TOKENS: "maxContextTokens",
+  MAX_CONCURRENT_REQUESTS: "maxConcurrentRequests",
 };
 
 // Config locations
@@ -93,6 +95,11 @@ function validateConfig(cfg) {
       min: 0,
       max: 10000000,
       default: DEFAULT_CONFIG.maxContextTokens,
+    },
+    maxConcurrentRequests: {
+      min: 1,
+      max: 50,
+      default: DEFAULT_CONFIG.maxConcurrentRequests,
     },
   };
 

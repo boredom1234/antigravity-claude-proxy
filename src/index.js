@@ -3,7 +3,7 @@
  * Entry point - starts the proxy server
  */
 
-import app from './server.js';
+import app, { cleanup } from './server.js';
 import { DEFAULT_PORT } from './constants.js';
 import { logger } from './utils/logger.js';
 import { startCacheCleanup, stopCacheCleanup } from './format/signature-cache.js';
@@ -60,6 +60,9 @@ async function gracefulShutdown(signal) {
 
     // Stop cache cleanup interval
     stopCacheCleanup();
+
+    // Cleanup server resources (account manager)
+    await cleanup();
 
     // Give pending requests time to complete (max 10 seconds)
     const shutdownTimeout = setTimeout(() => {
