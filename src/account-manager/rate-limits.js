@@ -229,6 +229,7 @@ export function markRateLimited(
     account.modelRateLimits = {};
   }
 
+  const quotaKey = buildQuotaKey(modelId, quotaType);
   account.modelRateLimits[quotaKey] = {
     isRateLimited: true,
     resetTime: resetTime,
