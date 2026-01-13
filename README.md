@@ -308,7 +308,7 @@ Check account status, subscription tiers, and quota anytime:
 curl "http://localhost:8672/account-limits?format=table"
 ```
 
-#### CLI Management Reference
+### CLI Management Reference
 
 If you prefer using the terminal for management:
 
@@ -319,9 +319,31 @@ antigravity-claude-proxy accounts list
 # Verify account health
 antigravity-claude-proxy accounts verify
 
-# Interactive CLI menu
+# Remove specific accounts interactively
+antigravity-claude-proxy accounts remove
+
+# Remove ALL accounts
+antigravity-claude-proxy accounts clear
+
+# Interactive CLI menu (includes "fresh start" option)
 antigravity-claude-proxy accounts
 ```
+
+### Usage Statistics CLI
+
+You can also view detailed usage statistics via the CLI:
+
+```bash
+# Show session summary (uptime, total requests, token efficiency)
+antigravity-claude-proxy stats
+
+# Show per-model usage breakdown
+antigravity-claude-proxy stats model
+
+# Show account quota limits
+antigravity-claude-proxy stats limits
+```
+
 
 ---
 
@@ -352,14 +374,56 @@ While most users can use the default settings, you can tune the proxy behavior v
 
 ### Configurable Options
 
-- **WebUI Password**: Secure your dashboard with `WEBUI_PASSWORD` env var or in config.
-- **Custom Port**: Change the default `8672` port.
-- **Retry Logic**: Configure `maxRetries`, `retryBaseMs`, and `retryMaxMs`.
-- **Load Balancing**: Adjust `defaultCooldownMs` and `maxWaitBeforeErrorMs`.
-- **Persistence**: Enable `persistTokenCache` to save OAuth sessions across restarts.
-- **Fallback Mode**: Enable `FALLBACK=true` or `--fallback` to use local Antigravity as a backup when all accounts are rate-limited.
+You can configure these via environment variables or `config.json`.
 
-Refer to `config.example.json` for a complete list of fields and documentation.
+| Environment Variable | Config Key | Default | Description |
+| -------------------- | ---------- | ------- | ----------- |
+| `WEBUI_PASSWORD` | `webuiPassword` | `""` | Password for the WebUI dashboard |
+| `PORT` | `port` | `8672` | Server port |
+| `MAX_RETRIES` | `maxRetries` | `5` | Max retries for failed requests |
+| `DEFAULT_COOLDOWN_MS`| `defaultCooldownMs`| `60000` | Cooldown for rate-limited accounts |
+| `MAX_CONCURRENT_REQUESTS` | `maxConcurrentRequests` | `2` | Max simultaneous requests per account |
+| `MAX_CONTEXT_TOKENS` | `maxContextTokens` | `500000`| Limit context window size (0 = unlimited) |
+| `GEMINI_HEADER_MODE` | `geminiHeaderMode` | `'cli'` | Header format: `'cli'` or `'antigravity'` |
+| `PERSIST_TOKEN_CACHE`| `persistTokenCache`| `false` | Save OAuth tokens to disk across restarts |
+| `LOG_LEVEL` | `logLevel` | `'info'`| Logging level (`debug`, `info`, `warn`, `error`) |
+| `RETRY_BASE_MS` | `retryBaseMs` | `1000` | Initial retry delay in ms |
+| `RETRY_MAX_MS` | `retryMaxMs` | `30000` | Max retry delay in ms |
+| `MAX_WAIT_BEFORE_ERROR_MS` | `maxWaitBeforeErrorMs` | `120000` | Max wait time for rate limits before erroring |
+| `OAUTH_CLIENT_ID` | - | (Default) | Custom Google OAuth Client ID |
+| `OAUTH_CLIENT_SECRET` | - | (Default) | Custom Google OAuth Client Secret |
+| `OAUTH_CALLBACK_PORT` | - | `51121` | Port for OAuth callback server |
+
+### Model Fallback Strategy
+
+When using `--fallback` (or `FALLBACK=true`), the proxy automatically switches to these models when quotas are exhausted:
+
+- `gemini-3-pro-high` → `claude-opus-4-5-thinking`
+- `gemini-3-pro-low` → `claude-sonnet-4-5`
+- `gemini-3-flash` → `claude-sonnet-4-5-thinking`
+- `claude-opus-4-5-thinking` → `claude-sonnet-4-5-thinking`
+
+### Model Mapping
+
+You can alias or hide models by adding a `modelMapping` object to your `config.json`:
+
+```json
+{
+  "modelMapping": {
+    "my-custom-alias": "gemini-3-flash",
+    "claude-3-5-sonnet": "gemini-3-pro-low",
+    "gpt-4o": { "hidden": true }
+  }
+}
+```
+
+### Data Storage
+
+The proxy stores its data in `~/.config/antigravity-proxy/` (or the OS-specific equivalent):
+
+- `config.json`: User configuration overrides.
+- `accounts.json`: Encrypted OAuth tokens and account metadata.
+- `usage-history.json`: 30-day rolling request history.
 
 ---
 
@@ -370,9 +434,16 @@ Refer to `config.example.json` for a complete list of fields and documentation.
 | `/health`            | GET    | Health check                                                          |
 | `/account-limits`    | GET    | Account status and quota limits (add `?format=table` for ASCII table) |
 | `/v1/messages`       | POST   | Anthropic Messages API                                                |
+| `/v1/chat/completions`| POST  | OpenAI-compatible Chat Completions API                                |
+| `/v1/messages/count_tokens`| POST | Count tokens for a message                                          |
 | `/v1/models`         | GET    | List available models                                                 |
 | `/api/stats/history` | GET    | Get historical usage statistics                                       |
+| `/api/stats/session` | GET    | Get current session statistics                                        |
+| `/api/stats/tokens`  | GET    | Get token usage statistics                                            |
+| `/api/event_logging/batch` | POST | Batch event logging (for clients)                                     |
 | `/refresh-token`     | POST   | Force token refresh                                                   |
+
+> **Note**: All API responses include an `X-Request-Id` header for correlation and debugging.
 
 ---
 
