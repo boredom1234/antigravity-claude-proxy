@@ -1,19 +1,28 @@
-import fs from 'fs';
-import path from 'path';
+import fs from "fs";
+import path from "path";
 
-import { USAGE_HISTORY_PATH, getModelFamily } from '../constants.js';
+import { USAGE_HISTORY_PATH, getModelFamily } from "../constants.js";
 
 // Persistence path
 const HISTORY_FILE = USAGE_HISTORY_PATH;
 const DATA_DIR = path.dirname(HISTORY_FILE);
-const OLD_DATA_DIR = path.join(process.cwd(), 'data');
-const OLD_HISTORY_FILE = path.join(OLD_DATA_DIR, 'usage-history.json');
+const OLD_DATA_DIR = path.join(process.cwd(), "data");
+const OLD_HISTORY_FILE = path.join(OLD_DATA_DIR, "usage-history.json");
 
 // In-memory storage
 // Structure: { "YYYY-MM-DDTHH:00:00.000Z": { "claude": { "model-name": count, "_subtotal": count }, "_total": count } }
 let history = {};
 let isDirty = false;
-let isSaving = false;  // Mutex to prevent concurrent writes
+let isSaving = false; // Mutex to prevent concurrent writes
+
+// Token usage tracking (session-based, not persisted)
+let tokenStats = {
+  input: 0,
+  output: 0,
+  total: 0,
+  cached: 0,
+  lastUpdated: null,
+};
 
 /**
  * Wrapper for getModelFamily that maps 'unknown' to 'other' for usage stats
@@ -21,8 +30,8 @@ let isSaving = false;  // Mutex to prevent concurrent writes
  * @returns {string} The family name (claude, gemini, or other)
  */
 function getFamily(modelId) {
-    const family = getModelFamily(modelId);
-    return family === 'unknown' ? 'other' : family;
+  const family = getModelFamily(modelId);
+  return family === "unknown" ? "other" : family;
 }
 
 /**
@@ -32,9 +41,9 @@ function getFamily(modelId) {
  * @returns {string} Short model name
  */
 function getShortName(modelId, family) {
-    if (family === 'other') return modelId;
-    // Remove family prefix (e.g., "claude-opus-4-5" -> "opus-4-5")
-    return modelId.replace(new RegExp(`^${family}-`, 'i'), '');
+  if (family === "other") return modelId;
+  // Remove family prefix (e.g., "claude-opus-4-5" -> "opus-4-5")
+  return modelId.replace(new RegExp(`^${family}-`, "i"), "");
 }
 
 /**
@@ -42,63 +51,65 @@ function getShortName(modelId, family) {
  * Includes migration from legacy local data directory.
  */
 function load() {
-    try {
-        // Migration logic: if old file exists and new one doesn't
-        if (fs.existsSync(OLD_HISTORY_FILE) && !fs.existsSync(HISTORY_FILE)) {
-            console.log('[UsageStats] Migrating legacy usage data...');
-            if (!fs.existsSync(DATA_DIR)) {
-                fs.mkdirSync(DATA_DIR, { recursive: true });
-            }
-            fs.copyFileSync(OLD_HISTORY_FILE, HISTORY_FILE);
-            // We keep the old file for safety initially, but could delete it
-            console.log(`[UsageStats] Migration complete: ${OLD_HISTORY_FILE} -> ${HISTORY_FILE}`);
-        }
-
-        if (!fs.existsSync(DATA_DIR)) {
-            fs.mkdirSync(DATA_DIR, { recursive: true });
-        }
-        if (fs.existsSync(HISTORY_FILE)) {
-            const data = fs.readFileSync(HISTORY_FILE, 'utf8');
-            history = JSON.parse(data);
-        }
-    } catch (err) {
-        console.error('[UsageStats] Failed to load history:', err);
-        history = {};
+  try {
+    // Migration logic: if old file exists and new one doesn't
+    if (fs.existsSync(OLD_HISTORY_FILE) && !fs.existsSync(HISTORY_FILE)) {
+      console.log("[UsageStats] Migrating legacy usage data...");
+      if (!fs.existsSync(DATA_DIR)) {
+        fs.mkdirSync(DATA_DIR, { recursive: true });
+      }
+      fs.copyFileSync(OLD_HISTORY_FILE, HISTORY_FILE);
+      // We keep the old file for safety initially, but could delete it
+      console.log(
+        `[UsageStats] Migration complete: ${OLD_HISTORY_FILE} -> ${HISTORY_FILE}`
+      );
     }
+
+    if (!fs.existsSync(DATA_DIR)) {
+      fs.mkdirSync(DATA_DIR, { recursive: true });
+    }
+    if (fs.existsSync(HISTORY_FILE)) {
+      const data = fs.readFileSync(HISTORY_FILE, "utf8");
+      history = JSON.parse(data);
+    }
+  } catch (err) {
+    console.error("[UsageStats] Failed to load history:", err);
+    history = {};
+  }
 }
 
 /**
  * Save history to disk (with mutex to prevent concurrent writes)
  */
 function save() {
-    if (!isDirty || isSaving) return;
-    isSaving = true;
-    try {
-        fs.writeFileSync(HISTORY_FILE, JSON.stringify(history, null, 2));
-        isDirty = false;
-    } catch (err) {
-        console.error('[UsageStats] Failed to save history:', err);
-    } finally {
-        isSaving = false;
-    }
+  if (!isDirty || isSaving) return;
+  isSaving = true;
+  try {
+    fs.writeFileSync(HISTORY_FILE, JSON.stringify(history, null, 2));
+    isDirty = false;
+  } catch (err) {
+    console.error("[UsageStats] Failed to save history:", err);
+  } finally {
+    isSaving = false;
+  }
 }
 
 /**
  * Prune old data (keep last 30 days)
  */
 function prune() {
-    const now = new Date();
-    const cutoff = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+  const now = new Date();
+  const cutoff = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
 
-    let pruned = false;
-    Object.keys(history).forEach(key => {
-        if (new Date(key) < cutoff) {
-            delete history[key];
-            pruned = true;
-        }
-    });
+  let pruned = false;
+  Object.keys(history).forEach((key) => {
+    if (new Date(key) < cutoff) {
+      delete history[key];
+      pruned = true;
+    }
+  });
 
-    if (pruned) isDirty = true;
+  if (pruned) isDirty = true;
 }
 
 /**
@@ -106,34 +117,69 @@ function prune() {
  * @param {string} modelId - The specific model identifier
  */
 function track(modelId) {
-    const now = new Date();
-    // Round down to nearest hour
-    now.setMinutes(0, 0, 0);
-    const key = now.toISOString();
+  const now = new Date();
+  // Round down to nearest hour
+  now.setMinutes(0, 0, 0);
+  const key = now.toISOString();
 
-    if (!history[key]) {
-        history[key] = { _total: 0 };
-    }
+  if (!history[key]) {
+    history[key] = { _total: 0 };
+  }
 
-    const hourData = history[key];
-    const family = getFamily(modelId);
-    const shortName = getShortName(modelId, family);
+  const hourData = history[key];
+  const family = getFamily(modelId);
+  const shortName = getShortName(modelId, family);
 
-    // Initialize family object if needed
-    if (!hourData[family]) {
-        hourData[family] = { _subtotal: 0 };
-    }
+  // Initialize family object if needed
+  if (!hourData[family]) {
+    hourData[family] = { _subtotal: 0 };
+  }
 
-    // Increment model-specific count
-    hourData[family][shortName] = (hourData[family][shortName] || 0) + 1;
+  // Increment model-specific count
+  hourData[family][shortName] = (hourData[family][shortName] || 0) + 1;
 
-    // Increment family subtotal
-    hourData[family]._subtotal = (hourData[family]._subtotal || 0) + 1;
+  // Increment family subtotal
+  hourData[family]._subtotal = (hourData[family]._subtotal || 0) + 1;
 
-    // Increment global total
-    hourData._total = (hourData._total || 0) + 1;
+  // Increment global total
+  hourData._total = (hourData._total || 0) + 1;
 
-    isDirty = true;
+  isDirty = true;
+}
+
+/**
+ * Track token usage from a request
+ * @param {number} input - Input tokens
+ * @param {number} output - Output tokens
+ * @param {number} cached - Cached tokens (optional)
+ */
+function trackTokens(input = 0, output = 0, cached = 0) {
+  tokenStats.input += input;
+  tokenStats.output += output;
+  tokenStats.cached += cached;
+  tokenStats.total = tokenStats.input + tokenStats.output;
+  tokenStats.lastUpdated = new Date().toISOString();
+}
+
+/**
+ * Get current token stats
+ * @returns {object} Token statistics
+ */
+function getTokenStats() {
+  return { ...tokenStats };
+}
+
+/**
+ * Reset token stats (for new session)
+ */
+function resetTokenStats() {
+  tokenStats = {
+    input: 0,
+    output: 0,
+    total: 0,
+    cached: 0,
+    lastUpdated: null,
+  };
 }
 
 /**
@@ -141,31 +187,37 @@ function track(modelId) {
  * @param {import('express').Application} app
  */
 function setupMiddleware(app) {
-    load();
+  load();
 
-    // Auto-save every minute
-    setInterval(() => {
-        save();
-        prune();
-    }, 60 * 1000);
+  // Auto-save every minute
+  setInterval(() => {
+    save();
+    prune();
+  }, 60 * 1000);
 
-    // Save on exit
-    process.on('SIGINT', () => { save(); process.exit(); });
-    process.on('SIGTERM', () => { save(); process.exit(); });
+  // Save on exit
+  process.on("SIGINT", () => {
+    save();
+    process.exit();
+  });
+  process.on("SIGTERM", () => {
+    save();
+    process.exit();
+  });
 
-    // Request interceptor
-    // Track both Anthropic (/v1/messages) and OpenAI compatible (/v1/chat/completions) endpoints
-    const TRACKED_PATHS = ['/v1/messages', '/v1/chat/completions'];
+  // Request interceptor
+  // Track both Anthropic (/v1/messages) and OpenAI compatible (/v1/chat/completions) endpoints
+  const TRACKED_PATHS = ["/v1/messages", "/v1/chat/completions"];
 
-    app.use((req, res, next) => {
-        if (req.method === 'POST' && TRACKED_PATHS.includes(req.path)) {
-            const model = req.body?.model;
-            if (model) {
-                track(model);
-            }
-        }
-        next();
-    });
+  app.use((req, res, next) => {
+    if (req.method === "POST" && TRACKED_PATHS.includes(req.path)) {
+      const model = req.body?.model;
+      if (model) {
+        track(model);
+      }
+    }
+    next();
+  });
 }
 
 /**
@@ -173,15 +225,20 @@ function setupMiddleware(app) {
  * @param {import('express').Application} app
  */
 function setupRoutes(app) {
-    app.get('/api/stats/history', (req, res) => {
-        // Sort keys to ensure chronological order
-        const sortedKeys = Object.keys(history).sort();
-        const sortedData = {};
-        sortedKeys.forEach(key => {
-            sortedData[key] = history[key];
-        });
-        res.json(sortedData);
+  app.get("/api/stats/history", (req, res) => {
+    // Sort keys to ensure chronological order
+    const sortedKeys = Object.keys(history).sort();
+    const sortedData = {};
+    sortedKeys.forEach((key) => {
+      sortedData[key] = history[key];
     });
+    res.json(sortedData);
+  });
+
+  // Token stats endpoint
+  app.get("/api/stats/tokens", (req, res) => {
+    res.json(getTokenStats());
+  });
 }
 
 /**
@@ -189,19 +246,22 @@ function setupRoutes(app) {
  * @returns {object} History data sorted by timestamp
  */
 function getHistory() {
-    const sortedKeys = Object.keys(history).sort();
-    const sortedData = {};
-    sortedKeys.forEach(key => {
-        sortedData[key] = history[key];
-    });
-    return sortedData;
+  const sortedKeys = Object.keys(history).sort();
+  const sortedData = {};
+  sortedKeys.forEach((key) => {
+    sortedData[key] = history[key];
+  });
+  return sortedData;
 }
 
 export default {
-    setupMiddleware,
-    setupRoutes,
-    track,
-    getFamily,
-    getShortName,
-    getHistory
+  setupMiddleware,
+  setupRoutes,
+  track,
+  trackTokens,
+  getTokenStats,
+  resetTokenStats,
+  getFamily,
+  getShortName,
+  getHistory,
 };

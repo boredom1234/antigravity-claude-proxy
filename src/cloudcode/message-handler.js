@@ -23,6 +23,7 @@ import { buildCloudCodeRequest, buildHeaders } from "./request-builder.js";
 import { parseThinkingSSEResponse } from "./sse-parser.js";
 import { getFallbackModel } from "../fallback-config.js";
 import { deriveSessionId } from "./session-manager.js";
+import usageStats from "../modules/usage-stats.js";
 
 /**
  * Send a non-streaming request to Cloud Code with multi-account support
@@ -223,16 +224,66 @@ export async function sendMessage(
 
           // For thinking models, parse SSE and accumulate all parts
           if (isThinking) {
-            return await parseThinkingSSEResponse(
+            const result = await parseThinkingSSEResponse(
               response,
               anthropicRequest.model
             );
+
+            // Log token usage
+            if (result.usage) {
+              const {
+                input_tokens = 0,
+                output_tokens = 0,
+                cache_read_input_tokens = 0,
+              } = result.usage;
+              const totalTokens = input_tokens + output_tokens;
+              logger.info(
+                `[Tokens] Input: ${input_tokens}, Output: ${output_tokens}, Total: ${totalTokens}${
+                  cache_read_input_tokens > 0
+                    ? `, Cached: ${cache_read_input_tokens}`
+                    : ""
+                }`
+              );
+              // Track tokens for dashboard
+              usageStats.trackTokens(
+                input_tokens,
+                output_tokens,
+                cache_read_input_tokens
+              );
+            }
+
+            return result;
           }
 
           // Non-thinking models use regular JSON
           const data = await response.json();
           logger.debug("[CloudCode] Response received");
-          return convertGoogleToAnthropic(data, anthropicRequest.model);
+          const result = convertGoogleToAnthropic(data, anthropicRequest.model);
+
+          // Log token usage
+          if (result.usage) {
+            const {
+              input_tokens = 0,
+              output_tokens = 0,
+              cache_read_input_tokens = 0,
+            } = result.usage;
+            const totalTokens = input_tokens + output_tokens;
+            logger.info(
+              `[Tokens] Input: ${input_tokens}, Output: ${output_tokens}, Total: ${totalTokens}${
+                cache_read_input_tokens > 0
+                  ? `, Cached: ${cache_read_input_tokens}`
+                  : ""
+              }`
+            );
+            // Track tokens for dashboard
+            usageStats.trackTokens(
+              input_tokens,
+              output_tokens,
+              cache_read_input_tokens
+            );
+          }
+
+          return result;
         } catch (endpointError) {
           if (isRateLimitError(endpointError)) {
             throw endpointError; // Re-throw to trigger account switch

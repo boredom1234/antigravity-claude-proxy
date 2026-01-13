@@ -74,11 +74,7 @@ export function pickNext(accounts, currentIndex, onSave, modelId = null) {
     if (isAccountUsable(account, modelId)) {
       account.lastUsed = Date.now();
 
-      const position = idx + 1;
-      const total = accounts.length;
-      logger.info(
-        `[AccountManager] Using account: ${account.email} (${position}/${total})`
-      );
+      // Note: "Using account" is logged by message-handler/streaming-handler with request ID
 
       // Trigger save (don't await to avoid blocking)
       if (onSave) onSave();
@@ -204,7 +200,7 @@ export function pickStickyAccount(
   // 1. Try to find mapped account for this session
   if (sessionId && sessionMap && sessionMap.has(sessionId)) {
     const email = sessionMap.get(sessionId);
-    const index = accounts.findIndex(a => a.email === email);
+    const index = accounts.findIndex((a) => a.email === email);
 
     if (index !== -1) {
       const account = accounts[index];
@@ -215,7 +211,9 @@ export function pickStickyAccount(
       } else {
         // Mapped account is unusable (rate limited/invalid)
         // We must switch.
-        logger.debug(`[AccountManager] Mapped account ${email} is unusable, switching.`);
+        logger.debug(
+          `[AccountManager] Mapped account ${email} is unusable, switching.`
+        );
       }
     }
   }
@@ -239,7 +237,11 @@ export function pickStickyAccount(
   if (nextAccount) {
     if (sessionId && sessionMap) {
       sessionMap.set(sessionId, nextAccount.email);
-      logger.info(`[AccountManager] Assigned session ${sessionId.substring(0,8)}... to ${nextAccount.email}`);
+      logger.info(
+        `[AccountManager] Assigned session ${sessionId.substring(0, 8)}... to ${
+          nextAccount.email
+        }`
+      );
     }
     return { account: nextAccount, waitMs: 0, newIndex };
   }
@@ -247,15 +249,19 @@ export function pickStickyAccount(
   // 4. No accounts available at all?
   // Check if we should wait for the *originally mapped* account if it exists
   if (sessionId && sessionMap && sessionMap.has(sessionId)) {
-     const email = sessionMap.get(sessionId);
-     const index = accounts.findIndex(a => a.email === email);
-     if (index !== -1) {
-         const account = accounts[index];
-         const waitInfo = shouldWaitForCurrentAccount(accounts, index, modelId);
-         if (waitInfo.shouldWait) {
-             return { account: null, waitMs: waitInfo.waitMs, newIndex: currentIndex };
-         }
-     }
+    const email = sessionMap.get(sessionId);
+    const index = accounts.findIndex((a) => a.email === email);
+    if (index !== -1) {
+      const account = accounts[index];
+      const waitInfo = shouldWaitForCurrentAccount(accounts, index, modelId);
+      if (waitInfo.shouldWait) {
+        return {
+          account: null,
+          waitMs: waitInfo.waitMs,
+          newIndex: currentIndex,
+        };
+      }
+    }
   }
 
   // Last resort: check global current index wait time

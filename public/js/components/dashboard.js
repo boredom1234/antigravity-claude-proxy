@@ -17,6 +17,7 @@ window.Components.dashboard = () => ({
   hasFilteredTrendData: true,
   charts: { quotaDistribution: null, usageTrend: null },
   usageStats: { total: 0, today: 0, thisHour: 0 },
+  tokenStats: { input: 0, output: 0, total: 0, cached: 0, lastUpdated: null },
   historyData: {},
   modelTree: {},
   families: [],
@@ -101,6 +102,28 @@ window.Components.dashboard = () => ({
           this.stats.hasTrendData = true;
         }
       }
+    }
+
+    // Fetch token stats periodically
+    this.fetchTokenStats();
+    setInterval(() => {
+      if (this.$store.global.activeTab === "dashboard") {
+        this.fetchTokenStats();
+      }
+    }, 5000); // Refresh every 5 seconds
+  },
+
+  /**
+   * Fetch token stats from API
+   */
+  async fetchTokenStats() {
+    try {
+      const response = await fetch("/api/stats/tokens");
+      if (response.ok) {
+        this.tokenStats = await response.json();
+      }
+    } catch (err) {
+      console.warn("Failed to fetch token stats:", err);
     }
   },
 
