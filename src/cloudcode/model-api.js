@@ -4,7 +4,13 @@
  * Handles model listing and quota retrieval from the Cloud Code API.
  */
 
-import { ANTIGRAVITY_ENDPOINT_FALLBACKS, ANTIGRAVITY_HEADERS, getModelFamily } from '../constants.js';
+import {
+    ANTIGRAVITY_ENDPOINT_FALLBACKS,
+    ANTIGRAVITY_HEADERS,
+    LOAD_CODE_ASSIST_ENDPOINTS,
+    LOAD_CODE_ASSIST_HEADERS,
+    getModelFamily
+} from '../constants.js';
 import { logger } from '../utils/logger.js';
 import { retryWithBackoff, isRetryableError } from '../utils/retry.js';
 
@@ -149,10 +155,10 @@ export async function getSubscriptionTier(token) {
     const headers = {
         'Authorization': `Bearer ${token}`,
         'Content-Type': 'application/json',
-        ...ANTIGRAVITY_HEADERS
+        ...LOAD_CODE_ASSIST_HEADERS
     };
 
-    for (const endpoint of ANTIGRAVITY_ENDPOINT_FALLBACKS) {
+    for (const endpoint of LOAD_CODE_ASSIST_ENDPOINTS) {
         try {
             const url = `${endpoint}/v1internal:loadCodeAssist`;
             const response = await fetch(url, {
@@ -162,7 +168,8 @@ export async function getSubscriptionTier(token) {
                     metadata: {
                         ideType: 'IDE_UNSPECIFIED',
                         platform: 'PLATFORM_UNSPECIFIED',
-                        pluginType: 'GEMINI'
+                        pluginType: 'GEMINI',
+                        duetProject: 'rising-fact-p41fc'
                     }
                 })
             });

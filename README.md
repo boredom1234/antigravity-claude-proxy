@@ -282,9 +282,9 @@ Then run `claude` for official API or `claude-antigravity` for this proxy.
 
 ### GPT Models
 
-| Model ID              | Description             |
-| --------------------- | ----------------------- |
-| `gpt-oss-120b-medium` | GPT-OSS 120B Medium     |
+| Model ID              | Description         |
+| --------------------- | ------------------- |
+| `gpt-oss-120b-medium` | GPT-OSS 120B Medium |
 
 Gemini models include full thinking support with `thoughtSignature` handling for multi-turn conversations.
 
@@ -344,7 +344,6 @@ antigravity-claude-proxy stats model
 antigravity-claude-proxy stats limits
 ```
 
-
 ---
 
 ## Web Management Console
@@ -374,25 +373,26 @@ While most users can use the default settings, you can tune the proxy behavior v
 
 ### Configurable Options
 
-You can configure these via environment variables or `config.json`.
+- **API Key Authentication**: Protect `/v1/*` API endpoints with `API_KEY` env var or `apiKey` in config.
+  You can configure these via environment variables or `config.json`.
 
-| Environment Variable | Config Key | Default | Description |
-| -------------------- | ---------- | ------- | ----------- |
-| `WEBUI_PASSWORD` | `webuiPassword` | `""` | Password for the WebUI dashboard |
-| `PORT` | `port` | `8672` | Server port |
-| `MAX_RETRIES` | `maxRetries` | `5` | Max retries for failed requests |
-| `DEFAULT_COOLDOWN_MS`| `defaultCooldownMs`| `60000` | Cooldown for rate-limited accounts |
-| `MAX_CONCURRENT_REQUESTS` | `maxConcurrentRequests` | `2` | Max simultaneous requests per account |
-| `MAX_CONTEXT_TOKENS` | `maxContextTokens` | `500000`| Limit context window size (0 = unlimited) |
-| `GEMINI_HEADER_MODE` | `geminiHeaderMode` | `'cli'` | Header format: `'cli'` or `'antigravity'` |
-| `PERSIST_TOKEN_CACHE`| `persistTokenCache`| `false` | Save OAuth tokens to disk across restarts |
-| `LOG_LEVEL` | `logLevel` | `'info'`| Logging level (`debug`, `info`, `warn`, `error`) |
-| `RETRY_BASE_MS` | `retryBaseMs` | `1000` | Initial retry delay in ms |
-| `RETRY_MAX_MS` | `retryMaxMs` | `30000` | Max retry delay in ms |
-| `MAX_WAIT_BEFORE_ERROR_MS` | `maxWaitBeforeErrorMs` | `120000` | Max wait time for rate limits before erroring |
-| `OAUTH_CLIENT_ID` | - | (Default) | Custom Google OAuth Client ID |
-| `OAUTH_CLIENT_SECRET` | - | (Default) | Custom Google OAuth Client Secret |
-| `OAUTH_CALLBACK_PORT` | - | `51121` | Port for OAuth callback server |
+| Environment Variable       | Config Key              | Default   | Description                                      |
+| -------------------------- | ----------------------- | --------- | ------------------------------------------------ |
+| `WEBUI_PASSWORD`           | `webuiPassword`         | `""`      | Password for the WebUI dashboard                 |
+| `PORT`                     | `port`                  | `8672`    | Server port                                      |
+| `MAX_RETRIES`              | `maxRetries`            | `5`       | Max retries for failed requests                  |
+| `DEFAULT_COOLDOWN_MS`      | `defaultCooldownMs`     | `60000`   | Cooldown for rate-limited accounts               |
+| `MAX_CONCURRENT_REQUESTS`  | `maxConcurrentRequests` | `2`       | Max simultaneous requests per account            |
+| `MAX_CONTEXT_TOKENS`       | `maxContextTokens`      | `500000`  | Limit context window size (0 = unlimited)        |
+| `GEMINI_HEADER_MODE`       | `geminiHeaderMode`      | `'cli'`   | Header format: `'cli'` or `'antigravity'`        |
+| `PERSIST_TOKEN_CACHE`      | `persistTokenCache`     | `false`   | Save OAuth tokens to disk across restarts        |
+| `LOG_LEVEL`                | `logLevel`              | `'info'`  | Logging level (`debug`, `info`, `warn`, `error`) |
+| `RETRY_BASE_MS`            | `retryBaseMs`           | `1000`    | Initial retry delay in ms                        |
+| `RETRY_MAX_MS`             | `retryMaxMs`            | `30000`   | Max retry delay in ms                            |
+| `MAX_WAIT_BEFORE_ERROR_MS` | `maxWaitBeforeErrorMs`  | `120000`  | Max wait time for rate limits before erroring    |
+| `OAUTH_CLIENT_ID`          | -                       | (Default) | Custom Google OAuth Client ID                    |
+| `OAUTH_CLIENT_SECRET`      | -                       | (Default) | Custom Google OAuth Client Secret                |
+| `OAUTH_CALLBACK_PORT`      | -                       | `51121`   | Port for OAuth callback server                   |
 
 ### Model Fallback Strategy
 
@@ -429,19 +429,19 @@ The proxy stores its data in `~/.config/antigravity-proxy/` (or the OS-specific 
 
 ## API Endpoints
 
-| Endpoint             | Method | Description                                                           |
-| -------------------- | ------ | --------------------------------------------------------------------- |
-| `/health`            | GET    | Health check                                                          |
-| `/account-limits`    | GET    | Account status and quota limits (add `?format=table` for ASCII table) |
-| `/v1/messages`       | POST   | Anthropic Messages API                                                |
-| `/v1/chat/completions`| POST  | OpenAI-compatible Chat Completions API                                |
-| `/v1/messages/count_tokens`| POST | Count tokens for a message                                          |
-| `/v1/models`         | GET    | List available models                                                 |
-| `/api/stats/history` | GET    | Get historical usage statistics                                       |
-| `/api/stats/session` | GET    | Get current session statistics                                        |
-| `/api/stats/tokens`  | GET    | Get token usage statistics                                            |
-| `/api/event_logging/batch` | POST | Batch event logging (for clients)                                     |
-| `/refresh-token`     | POST   | Force token refresh                                                   |
+| Endpoint                    | Method | Description                                                           |
+| --------------------------- | ------ | --------------------------------------------------------------------- |
+| `/health`                   | GET    | Health check                                                          |
+| `/account-limits`           | GET    | Account status and quota limits (add `?format=table` for ASCII table) |
+| `/v1/messages`              | POST   | Anthropic Messages API                                                |
+| `/v1/chat/completions`      | POST   | OpenAI-compatible Chat Completions API                                |
+| `/v1/messages/count_tokens` | POST   | Count tokens for a message                                            |
+| `/v1/models`                | GET    | List available models                                                 |
+| `/api/stats/history`        | GET    | Get historical usage statistics                                       |
+| `/api/stats/session`        | GET    | Get current session statistics                                        |
+| `/api/stats/tokens`         | GET    | Get token usage statistics                                            |
+| `/api/event_logging/batch`  | POST   | Batch event logging (for clients)                                     |
+| `/refresh-token`            | POST   | Force token refresh                                                   |
 
 > **Note**: All API responses include an `X-Request-Id` header for correlation and debugging.
 

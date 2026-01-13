@@ -5,6 +5,7 @@ import { logger } from "./utils/logger.js";
 
 // Default config
 const DEFAULT_CONFIG = {
+  apiKey: "",
   webuiPassword: "",
   debug: false,
   logLevel: "info",
@@ -12,7 +13,7 @@ const DEFAULT_CONFIG = {
   retryBaseMs: 1000,
   retryMaxMs: 30000,
   persistTokenCache: false,
-  defaultCooldownMs: 60000, // 1 minute
+  defaultCooldownMs: 10000, // 10 seconds
   maxWaitBeforeErrorMs: 120000, // 2 minutes
   geminiHeaderMode: "cli", // 'cli' or 'antigravity'
   maxContextTokens: 500000, // Default to 500k tokens for context window

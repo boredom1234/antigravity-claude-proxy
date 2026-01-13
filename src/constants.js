@@ -91,6 +91,44 @@ export const GEMINI_CLI_HEADERS = {
     "ideType=IDE_UNSPECIFIED,platform=PLATFORM_UNSPECIFIED,pluginType=GEMINI",
 };
 
+// Endpoint order for loadCodeAssist (prod first)
+// loadCodeAssist works better on prod for fresh/unprovisioned accounts
+export const LOAD_CODE_ASSIST_ENDPOINTS = [
+  ANTIGRAVITY_ENDPOINT_PROD,
+  ANTIGRAVITY_ENDPOINT_DAILY,
+];
+
+// Hybrid headers specifically for loadCodeAssist
+// Uses google-api-nodejs-client User-Agent (required for project discovery on some accounts)
+export const LOAD_CODE_ASSIST_HEADERS = {
+  "User-Agent": "google-api-nodejs-client/9.15.1",
+  "X-Goog-Api-Client": "google-cloud-sdk vscode_cloudshelleditor/0.1",
+  "Client-Metadata": JSON.stringify({
+    ideType: "IDE_UNSPECIFIED",
+    platform: "PLATFORM_UNSPECIFIED",
+    pluginType: "GEMINI",
+  }),
+};
+
+// Endpoint order for loadCodeAssist (prod first)
+// loadCodeAssist works better on prod for fresh/unprovisioned accounts
+export const LOAD_CODE_ASSIST_ENDPOINTS = [
+  ANTIGRAVITY_ENDPOINT_PROD,
+  ANTIGRAVITY_ENDPOINT_DAILY,
+];
+
+// Hybrid headers specifically for loadCodeAssist
+// Uses google-api-nodejs-client User-Agent (required for project discovery on some accounts)
+export const LOAD_CODE_ASSIST_HEADERS = {
+  "User-Agent": "google-api-nodejs-client/9.15.1",
+  "X-Goog-Api-Client": "google-cloud-sdk vscode_cloudshelleditor/0.1",
+  "Client-Metadata": JSON.stringify({
+    ideType: "IDE_UNSPECIFIED",
+    platform: "PLATFORM_UNSPECIFIED",
+    pluginType: "GEMINI",
+  }),
+};
+
 // Default project ID if none can be discovered
 export const DEFAULT_PROJECT_ID = "rising-fact-p41fc";
 
@@ -225,9 +263,47 @@ export const MIN_TOP_P = 0;
 export const MAX_TOP_P = 1;
 export const MIN_TOP_K = 1;
 
+// Default test models for each family (used by test suite)
+export const TEST_MODELS = {
+  claude: "claude-sonnet-4-5-thinking",
+  gemini: "gemini-3-flash",
+};
+
+// Default Claude CLI presets (used by WebUI settings)
+export const DEFAULT_PRESETS = [
+  {
+    name: "Claude Thinking",
+    config: {
+      ANTHROPIC_AUTH_TOKEN: "test",
+      ANTHROPIC_BASE_URL: "http://localhost:8080",
+      ANTHROPIC_MODEL: "claude-opus-4-5-thinking",
+      ANTHROPIC_DEFAULT_OPUS_MODEL: "claude-opus-4-5-thinking",
+      ANTHROPIC_DEFAULT_SONNET_MODEL: "claude-sonnet-4-5-thinking",
+      ANTHROPIC_DEFAULT_HAIKU_MODEL: "gemini-2.5-flash-lite[1m]",
+      CLAUDE_CODE_SUBAGENT_MODEL: "claude-sonnet-4-5-thinking",
+      ENABLE_EXPERIMENTAL_MCP_CLI: "true",
+    },
+  },
+  {
+    name: "Gemini 1M",
+    config: {
+      ANTHROPIC_AUTH_TOKEN: "test",
+      ANTHROPIC_BASE_URL: "http://localhost:8080",
+      ANTHROPIC_MODEL: "gemini-3-pro-high[1m]",
+      ANTHROPIC_DEFAULT_OPUS_MODEL: "gemini-3-pro-high[1m]",
+      ANTHROPIC_DEFAULT_SONNET_MODEL: "gemini-3-flash[1m]",
+      ANTHROPIC_DEFAULT_HAIKU_MODEL: "gemini-2.5-flash-lite[1m]",
+      CLAUDE_CODE_SUBAGENT_MODEL: "gemini-3-flash[1m]",
+      ENABLE_EXPERIMENTAL_MCP_CLI: "true",
+    },
+  },
+];
+
 export default {
   ANTIGRAVITY_ENDPOINT_FALLBACKS,
   ANTIGRAVITY_HEADERS,
+  LOAD_CODE_ASSIST_ENDPOINTS,
+  LOAD_CODE_ASSIST_HEADERS,
   GEMINI_CLI_HEADERS,
   DEFAULT_PROJECT_ID,
   TOKEN_REFRESH_INTERVAL_MS,
@@ -251,6 +327,8 @@ export default {
   OAUTH_CONFIG,
   OAUTH_REDIRECT_URI,
   MODEL_FALLBACK_MAP,
+  TEST_MODELS,
+  DEFAULT_PRESETS,
   ANTIGRAVITY_SYSTEM_INSTRUCTION,
   VALID_MODEL_PREFIXES,
   MIN_TEMPERATURE,
