@@ -248,7 +248,8 @@ export async function sendMessage(
               usageStats.trackTokens(
                 input_tokens,
                 output_tokens,
-                cache_read_input_tokens
+                cache_read_input_tokens,
+                headerMode
               );
             }
 
@@ -279,7 +280,8 @@ export async function sendMessage(
             usageStats.trackTokens(
               input_tokens,
               output_tokens,
-              cache_read_input_tokens
+              cache_read_input_tokens,
+              headerMode
             );
           }
 

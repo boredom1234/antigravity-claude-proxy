@@ -226,7 +226,11 @@ export async function* sendMessageStream(
             emptyRetries++
           ) {
             try {
-              yield* streamSSEResponse(currentResponse, anthropicRequest.model);
+              yield* streamSSEResponse(
+                currentResponse,
+                anthropicRequest.model,
+                headerMode
+              );
               logger.debug("[CloudCode] Stream completed");
               return;
             } catch (streamError) {

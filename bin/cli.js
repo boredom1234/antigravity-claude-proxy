@@ -32,6 +32,10 @@ COMMANDS:
   accounts remove       Remove accounts interactively
   accounts verify       Verify account tokens are valid
   accounts clear        Remove all accounts
+  stats                 Show usage statistics (session summary)
+  stats session         Show session-specific usage statistics
+  stats model           Show per-model usage breakdown
+  stats limits          Show account quota limits
 
 OPTIONS:
   --help, -h            Show this help message
@@ -85,6 +89,14 @@ async function main() {
       const subCommand = args[1] || "add";
       process.argv = ["node", "accounts-cli.js", subCommand, ...args.slice(2)];
       await import("../src/cli/accounts.js");
+      break;
+    }
+
+    case "stats": {
+      // Pass remaining args to stats CLI
+      const subCommand = args[1] || "session";
+      process.argv = ["node", "stats.js", subCommand, ...args.slice(2)];
+      await import("../src/cli/stats.js");
       break;
     }
 

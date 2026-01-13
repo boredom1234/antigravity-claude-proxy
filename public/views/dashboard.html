@@ -298,6 +298,32 @@
             CACHED: <span x-text="tokenStats.cached.toLocaleString()"></span>
           </span>
         </div>
+        <!-- CLI vs Antigravity Mode Breakdown -->
+        <div
+          class="flex flex-wrap gap-1 mt-1.5 text-[9px] font-mono"
+          x-show="tokenStats.cliInput > 0 || tokenStats.antigravityInput > 0"
+        >
+          <span
+            x-show="tokenStats.cliInput > 0"
+            class="px-1.5 py-0.5 rounded bg-cyan-500/10 text-cyan-400 border border-cyan-500/20"
+            title="Tokens via CLI mode (Gemini CLI headers)"
+          >
+            CLI:
+            <span
+              x-text="((tokenStats.cliInput || 0) + (tokenStats.cliOutput || 0)).toLocaleString()"
+            ></span>
+          </span>
+          <span
+            x-show="tokenStats.antigravityInput > 0"
+            class="px-1.5 py-0.5 rounded bg-purple-500/10 text-purple-400 border border-purple-500/20"
+            title="Tokens via Antigravity mode (Antigravity headers)"
+          >
+            AG:
+            <span
+              x-text="((tokenStats.antigravityInput || 0) + (tokenStats.antigravityOutput || 0)).toLocaleString()"
+            ></span>
+          </span>
+        </div>
       </div>
 
       <div

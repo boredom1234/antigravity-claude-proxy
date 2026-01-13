@@ -156,6 +156,7 @@ try {
 
 // Setup usage statistics middleware
 usageStats.setupMiddleware(app);
+usageStats.setupRoutes(app);
 
 /**
  * Health check endpoint - Detailed status

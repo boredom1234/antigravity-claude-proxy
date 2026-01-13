@@ -20,9 +20,14 @@ import usageStats from "../modules/usage-stats.js";
  *
  * @param {Response} response - The HTTP response with SSE body
  * @param {string} originalModel - The original model name
+ * @param {string} [quotaType] - The quota type ('cli' or 'antigravity')
  * @yields {Object} Anthropic-format SSE events
  */
-export async function* streamSSEResponse(response, originalModel) {
+export async function* streamSSEResponse(
+  response,
+  originalModel,
+  quotaType = null
+) {
   const messageId = `msg_${crypto.randomBytes(16).toString("hex")}`;
   let hasEmittedStart = false;
   let blockIndex = 0;
@@ -282,5 +287,5 @@ export async function* streamSSEResponse(response, originalModel) {
   );
 
   // Track tokens for dashboard
-  usageStats.trackTokens(inputTokens, outputTokens, cacheReadTokens);
+  usageStats.trackTokens(inputTokens, outputTokens, cacheReadTokens, quotaType);
 }

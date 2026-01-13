@@ -1,5 +1,6 @@
 import fs from "fs";
 import path from "path";
+import crypto from "crypto";
 
 import { USAGE_HISTORY_PATH, getModelFamily } from "../constants.js";
 
@@ -14,6 +15,12 @@ const OLD_HISTORY_FILE = path.join(OLD_DATA_DIR, "usage-history.json");
 let history = {};
 let isDirty = false;
 let isSaving = false; // Mutex to prevent concurrent writes
+
+// Session state (tracks proxy uptime)
+let sessionState = {
+  sessionId: crypto.randomUUID(),
+  startTime: Date.now(),
+};
 
 // Token usage tracking (session-based, not persisted)
 let tokenStats = {
@@ -115,15 +122,16 @@ function prune() {
 /**
  * Track a request by model ID using hierarchical structure
  * @param {string} modelId - The specific model identifier
+ * @param {string} [quotaType] - The quota type ('cli' or 'antigravity')
  */
-function track(modelId) {
+function track(modelId, quotaType = null) {
   const now = new Date();
   // Round down to nearest hour
   now.setMinutes(0, 0, 0);
   const key = now.toISOString();
 
   if (!history[key]) {
-    history[key] = { _total: 0 };
+    history[key] = { _total: 0, _cli: 0, _antigravity: 0 };
   }
 
   const hourData = history[key];
@@ -132,7 +140,7 @@ function track(modelId) {
 
   // Initialize family object if needed
   if (!hourData[family]) {
-    hourData[family] = { _subtotal: 0 };
+    hourData[family] = { _subtotal: 0, _cli: 0, _antigravity: 0 };
   }
 
   // Increment model-specific count
@@ -140,6 +148,15 @@ function track(modelId) {
 
   // Increment family subtotal
   hourData[family]._subtotal = (hourData[family]._subtotal || 0) + 1;
+
+  // Track by quota type (if provided)
+  if (quotaType === "cli") {
+    hourData[family]._cli = (hourData[family]._cli || 0) + 1;
+    hourData._cli = (hourData._cli || 0) + 1;
+  } else if (quotaType === "antigravity") {
+    hourData[family]._antigravity = (hourData[family]._antigravity || 0) + 1;
+    hourData._antigravity = (hourData._antigravity || 0) + 1;
+  }
 
   // Increment global total
   hourData._total = (hourData._total || 0) + 1;
@@ -152,13 +169,23 @@ function track(modelId) {
  * @param {number} input - Input tokens
  * @param {number} output - Output tokens
  * @param {number} cached - Cached tokens (optional)
+ * @param {string} [quotaType] - The quota type ('cli' or 'antigravity')
  */
-function trackTokens(input = 0, output = 0, cached = 0) {
+function trackTokens(input = 0, output = 0, cached = 0, quotaType = null) {
   tokenStats.input += input;
   tokenStats.output += output;
   tokenStats.cached += cached;
   tokenStats.total = tokenStats.input + tokenStats.output;
   tokenStats.lastUpdated = new Date().toISOString();
+
+  // Track by mode
+  if (quotaType === "cli") {
+    tokenStats.cliInput = (tokenStats.cliInput || 0) + input;
+    tokenStats.cliOutput = (tokenStats.cliOutput || 0) + output;
+  } else if (quotaType === "antigravity") {
+    tokenStats.antigravityInput = (tokenStats.antigravityInput || 0) + input;
+    tokenStats.antigravityOutput = (tokenStats.antigravityOutput || 0) + output;
+  }
 }
 
 /**
@@ -239,6 +266,11 @@ function setupRoutes(app) {
   app.get("/api/stats/tokens", (req, res) => {
     res.json(getTokenStats());
   });
+
+  // Session info endpoint
+  app.get("/api/stats/session", (req, res) => {
+    res.json(getSessionInfo());
+  });
 }
 
 /**
@@ -254,6 +286,18 @@ function getHistory() {
   return sortedData;
 }
 
+/**
+ * Get session info (ID and wall time)
+ * @returns {object} Session information
+ */
+function getSessionInfo() {
+  return {
+    sessionId: sessionState.sessionId,
+    startTime: sessionState.startTime,
+    wallTimeMs: Date.now() - sessionState.startTime,
+  };
+}
+
 export default {
   setupMiddleware,
   setupRoutes,
@@ -264,4 +308,5 @@ export default {
   getFamily,
   getShortName,
   getHistory,
+  getSessionInfo,
 };
