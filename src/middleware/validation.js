@@ -38,6 +38,10 @@ export function contentTypeMiddleware(req, res, next) {
   if (req.method === "POST") {
     const contentType = req.headers["content-type"];
     if (!contentType || !contentType.includes("application/json")) {
+        // Skip validation for /refresh-token endpoint (often called with empty body)
+        if (req.path === "/refresh-token" && req.method === "POST") {
+            return next();
+        }
       return res.status(415).json({
         type: "error",
         error: {

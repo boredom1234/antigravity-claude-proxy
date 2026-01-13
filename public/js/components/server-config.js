@@ -348,4 +348,28 @@ window.Components.serverConfig = () => ({
       store.showToast("Failed to update header mode: " + e.message, "error");
     }
   },
+
+  async forceRefreshTokens() {
+    const store = Alpine.store("global");
+    if (!confirm(store.t("forceRefreshDesc"))) return;
+
+    try {
+      const { response, newPassword } = await window.utils.request(
+        "/refresh-token",
+        { method: "POST" },
+        store.webuiPassword
+      );
+
+      if (newPassword) store.webuiPassword = newPassword;
+
+      const data = await response.json();
+      if (data.status === "ok") {
+        store.showToast(store.t("tokenCacheCleared"), "success");
+      } else {
+        throw new Error(data.error || "Failed to refresh tokens");
+      }
+    } catch (e) {
+      store.showToast("Failed to refresh tokens: " + e.message, "error");
+    }
+  },
 });

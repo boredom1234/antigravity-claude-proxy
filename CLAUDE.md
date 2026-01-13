@@ -256,7 +256,8 @@ Each account object in `accounts.json` contains:
 
 - When Node.js is updated, native modules like `better-sqlite3` may become incompatible
 - The proxy automatically detects `NODE_MODULE_VERSION` mismatch errors
-- On detection, it attempts to rebuild the module using `npm rebuild`
+- On detection, it first checks for required build tools (Python, npm)
+- It then attempts to rebuild the module using `npm rebuild`
 - If rebuild succeeds, the module is reloaded; if reload fails, a server restart is required
 - Implementation in `src/utils/native-module-helper.js` and lazy loading in `src/auth/database.js`
 
@@ -356,6 +357,7 @@ Each account object in `accounts.json` contains:
 - `/api/stats/history` - Retrieve 30-day request history (sorted chronologically)
 - `/api/auth/url` - Generate Google OAuth URL
 - `/api/auth/status/:state` - Poll OAuth flow status
+- `/refresh-token` - Force refresh of OAuth tokens and clear caches (POST)
 - `/account-limits` - Fetch account quotas and subscription data
   - Returns: `{ accounts: [...], models: [...] }`
   - Query params: `?format=table` (ASCII) or `?includeHistory=true` (usage stats)

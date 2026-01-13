@@ -10,8 +10,14 @@
  * compatibility checking.
  */
 
+import fs from 'fs';
+import path from 'path';
 import { GEMINI_SIGNATURE_CACHE_TTL_MS, MIN_SIGNATURE_LENGTH } from '../constants.js';
 import { logger } from '../utils/logger.js';
+
+// Persistence configuration
+const CACHE_FILE_PATH = path.join(process.cwd(), 'data', 'signature-cache.json');
+const DATA_DIR = path.dirname(CACHE_FILE_PATH);
 
 const signatureCache = new Map();
 const thinkingSignatureCache = new Map();
@@ -23,6 +29,69 @@ const MAX_THINKING_CACHE_SIZE = 5000;
 // Cleanup interval reference
 let cleanupInterval = null;
 const CLEANUP_INTERVAL_MS = 5 * 60 * 1000; // 5 minutes
+
+// Persistence state
+let isDirty = false;
+let isSaving = false;
+
+/**
+ * Load cache from disk
+ */
+function loadCache() {
+    try {
+        if (!fs.existsSync(DATA_DIR)) {
+            fs.mkdirSync(DATA_DIR, { recursive: true });
+        }
+
+        if (fs.existsSync(CACHE_FILE_PATH)) {
+            const data = JSON.parse(fs.readFileSync(CACHE_FILE_PATH, 'utf8'));
+
+            // Load signatures
+            if (data.signatures) {
+                for (const [key, value] of Object.entries(data.signatures)) {
+                    signatureCache.set(key, value);
+                }
+            }
+
+            // Load thinking signatures
+            if (data.thinkingSignatures) {
+                for (const [key, value] of Object.entries(data.thinkingSignatures)) {
+                    thinkingSignatureCache.set(key, value);
+                }
+            }
+
+            logger.debug(`[SignatureCache] Loaded ${signatureCache.size} signatures and ${thinkingSignatureCache.size} thinking signatures from disk`);
+        }
+    } catch (err) {
+        logger.error(`[SignatureCache] Failed to load cache: ${err.message}`);
+    }
+}
+
+/**
+ * Save cache to disk
+ */
+function saveCache() {
+    if (!isDirty || isSaving) return;
+
+    isSaving = true;
+    try {
+        const data = {
+            signatures: Object.fromEntries(signatureCache),
+            thinkingSignatures: Object.fromEntries(thinkingSignatureCache)
+        };
+
+        fs.writeFileSync(CACHE_FILE_PATH, JSON.stringify(data, null, 2));
+        isDirty = false;
+        logger.debug('[SignatureCache] Saved cache to disk');
+    } catch (err) {
+        logger.error(`[SignatureCache] Failed to save cache: ${err.message}`);
+    } finally {
+        isSaving = false;
+    }
+}
+
+// Load on module initialization
+loadCache();
 
 /**
  * Store a signature for a tool_use_id
@@ -43,6 +112,7 @@ export function cacheSignature(toolUseId, signature) {
         signature,
         timestamp: Date.now()
     });
+    isDirty = true;
 }
 
 /**
@@ -88,6 +158,8 @@ export function cleanupCache() {
 
     if (cleaned > 0) {
         logger.debug(`[SignatureCache] Cleaned up ${cleaned} expired entries. Remaining: signatures=${signatureCache.size}, thinking=${thinkingSignatureCache.size}`);
+        isDirty = true;
+        saveCache(); // Save after cleanup
     }
 
     return cleaned;
@@ -102,10 +174,16 @@ export function startCacheCleanup() {
 
     cleanupInterval = setInterval(() => {
         cleanupCache();
+        // Also save periodically even if no cleanup happened but dirty
+        if (isDirty) saveCache();
     }, CLEANUP_INTERVAL_MS);
 
     // Don't prevent Node from exiting
     cleanupInterval.unref();
+
+    // Save on exit
+    process.on('SIGINT', () => { saveCache(); process.exit(); });
+    process.on('SIGTERM', () => { saveCache(); process.exit(); });
 
     logger.debug('[SignatureCache] Started automatic cleanup interval');
 }
@@ -149,6 +227,7 @@ export function cacheThinkingSignature(signature, modelFamily) {
         modelFamily,
         timestamp: Date.now()
     });
+    isDirty = true;
 }
 
 /**

@@ -60,6 +60,7 @@
                     <th class="py-3 text-left text-[10px] font-bold text-gray-500 uppercase tracking-wider w-16">Tier</th>
                     <th class="py-3 text-left text-[10px] font-bold text-gray-500 uppercase tracking-wider w-32">Quota</th>
                     <th class="py-3 text-left text-[10px] font-bold text-gray-500 uppercase tracking-wider w-24" x-text="$store.global.t('health')">Health</th>
+                    <th class="py-3 text-left text-[10px] font-bold text-gray-500 uppercase tracking-wider w-24" x-text="$store.global.t('lastUsed')">Last Used</th>
                     <th class="py-3 pr-6 text-right text-[10px] font-bold text-gray-500 uppercase tracking-wider w-32" x-text="$store.global.t('operations')">Operations</th>
                 </tr>
             </thead>
@@ -152,7 +153,9 @@
                             </div>
                         </td>
                         <td class="py-4">
-                            <div class="flex items-center gap-2">
+                            <div class="flex items-center gap-2"
+                                 :class="{'tooltip tooltip-bottom cursor-help': acc.status === 'invalid'}"
+                                 :data-tip="acc.status === 'invalid' ? (acc.invalidReason || 'Unknown error') : ''">
                                 <div class="w-2 h-2 rounded-full flex-shrink-0"
                                      :class="acc.status === 'ok' ?
                                              'bg-neon-green shadow-[0_0_8px_rgba(34,197,94,0.6)] animate-pulse' :
@@ -163,6 +166,9 @@
                                       x-text="acc.status.toUpperCase()">
                                 </span>
                             </div>
+                        </td>
+                        <td class="py-4">
+                            <span class="text-xs font-mono text-gray-400" x-text="window.utils.formatTimeAgo(acc.lastUsed)"></span>
                         </td>
                         <td class="py-4 pr-6">
                             <div class="flex justify-end gap-2">

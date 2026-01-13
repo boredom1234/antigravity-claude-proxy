@@ -389,7 +389,21 @@ export function analyzeConversationState(messages) {
 
     // We have an interrupted tool if: assistant has tool_use, NO tool_results,
     // but there IS a plain user message after (user interrupted and sent new message)
+    // AND the plain user message is NOT just a "Continue" or similar short acknowledgement
+    // which might just be a streaming artifact or user prompt.
+    // For safety, we check if the user message is substantial enough to be an interruption.
     const interruptedTool = hasToolUse && toolResultCount === 0 && hasPlainUserMessageAfter;
+
+    // Additional safety: Don't trigger recovery if we just started (no assistant msg)
+    if (lastAssistantIdx === -1) {
+         return {
+            inToolLoop: false,
+            interruptedTool: false,
+            turnHasThinking: false,
+            toolResultCount: 0,
+            lastAssistantIdx
+        };
+    }
 
     return {
         inToolLoop,

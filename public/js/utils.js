@@ -46,6 +46,19 @@ window.utils = {
         return `${mins}${mSuffix}`;
     },
 
+    formatTimeAgo(isoTime) {
+        if (!isoTime) return '-';
+        const diff = Date.now() - new Date(isoTime).getTime();
+        const mins = Math.floor(diff / 60000);
+        const hrs = Math.floor(mins / 60);
+        const days = Math.floor(hrs / 24);
+
+        if (mins < 1) return 'Just now';
+        if (mins < 60) return `${mins}m ago`;
+        if (hrs < 24) return `${hrs}h ago`;
+        return `${days}d ago`;
+    },
+
     getThemeColor(name) {
         return getComputedStyle(document.documentElement).getPropertyValue(name).trim();
     },

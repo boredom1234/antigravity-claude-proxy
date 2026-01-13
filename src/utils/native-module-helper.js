@@ -10,6 +10,34 @@ import { existsSync } from 'fs';
 import { logger } from './logger.js';
 
 /**
+ * Check if required build tools are available
+ * @returns {boolean} True if tools are available
+ */
+function checkBuildTools() {
+    try {
+        // Check for node-gyp or npm availability
+        // npm is usually sufficient as it bundles node-gyp
+        execSync('npm --version', { stdio: 'ignore' });
+
+        // Check for python (often required by node-gyp)
+        try {
+            execSync('python --version', { stdio: 'ignore' });
+        } catch (e) {
+            try {
+                execSync('python3 --version', { stdio: 'ignore' });
+            } catch (e2) {
+                logger.warn('[NativeModule] Python not found, rebuild might fail');
+            }
+        }
+
+        return true;
+    } catch (e) {
+        logger.error('[NativeModule] npm not found, cannot rebuild modules');
+        return false;
+    }
+}
+
+/**
  * Check if an error is a NODE_MODULE_VERSION mismatch error
  * @param {Error} error - The error to check
  * @returns {boolean} True if it's a version mismatch error
@@ -114,6 +142,14 @@ export function attemptAutoRebuild(error) {
     }
 
     logger.warn('[NativeModule] Native module version mismatch detected');
+
+    // Check for build tools first
+    if (!checkBuildTools()) {
+        logger.error('[NativeModule] Build tools missing. Skipping auto-rebuild.');
+        logger.error('[NativeModule] Please install Python and C++ build tools or run "npm rebuild" manually.');
+        return false;
+    }
+
     logger.info('[NativeModule] Attempting automatic rebuild...');
 
     return rebuildModule(packagePath);

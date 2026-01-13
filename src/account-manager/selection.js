@@ -25,17 +25,29 @@ import { clearExpiredLimits, getAvailableAccounts } from "./rate-limits.js";
  * @returns {boolean} True if account is usable
  */
 function isAccountUsable(account, modelId) {
-  if (!account || account.isInvalid) return false;
+  if (!account) return false;
+
+  if (account.isInvalid) {
+      logger.debug(`[AccountManager] Account ${account.email} unusable: Invalid state`);
+      return false;
+  }
 
   // WebUI: Skip disabled accounts
-  if (account.enabled === false) return false;
+  if (account.enabled === false) {
+      logger.debug(`[AccountManager] Account ${account.email} unusable: Disabled`);
+      return false;
+  }
 
   // Check concurrency limit
-  if ((account.activeRequests || 0) >= MAX_CONCURRENT_REQUESTS) return false;
+  if ((account.activeRequests || 0) >= MAX_CONCURRENT_REQUESTS) {
+      logger.debug(`[AccountManager] Account ${account.email} unusable: Concurrency limit (${account.activeRequests}/${MAX_CONCURRENT_REQUESTS})`);
+      return false;
+  }
 
   if (modelId && account.modelRateLimits && account.modelRateLimits[modelId]) {
     const limit = account.modelRateLimits[modelId];
     if (limit.isRateLimited && limit.resetTime > Date.now()) {
+      logger.debug(`[AccountManager] Account ${account.email} unusable: Rate limited on ${modelId} until ${new Date(limit.resetTime).toISOString()}`);
       return false;
     }
   }
@@ -211,8 +223,9 @@ export function pickStickyAccount(
       } else {
         // Mapped account is unusable (rate limited/invalid)
         // We must switch.
-        logger.debug(
-          `[AccountManager] Mapped account ${email} is unusable, switching.`
+        // Detailed reason is logged by isAccountUsable
+        logger.info(
+          `[AccountManager] Sticky account ${email} is currently unusable. Falling back to pool.`
         );
       }
     }

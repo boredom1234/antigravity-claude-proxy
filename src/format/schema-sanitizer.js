@@ -547,7 +547,17 @@ export function sanitizeSchema(schema) {
 
     // Ensure we have at least a type
     if (!sanitized.type) {
-        sanitized.type = 'object';
+        // Try to infer from enum (e.g. from const conversion)
+        if (sanitized.enum && sanitized.enum.length > 0) {
+            const val = sanitized.enum[0];
+            if (typeof val === 'string') sanitized.type = 'string';
+            else if (typeof val === 'number') sanitized.type = Number.isInteger(val) ? 'integer' : 'number';
+            else if (typeof val === 'boolean') sanitized.type = 'boolean';
+        }
+
+        if (!sanitized.type) {
+            sanitized.type = 'object';
+        }
     }
 
     // If object type with no properties, add placeholder
