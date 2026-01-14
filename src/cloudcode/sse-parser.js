@@ -68,6 +68,12 @@ export async function parseThinkingSSEResponse(response, originalModel) {
                 }
 
                 const candidates = innerResponse.candidates || [];
+
+                // Log when multiple candidates are present (we only use the first)
+                if (candidates.length > 1) {
+                    logger.debug(`[SSEParser] Multiple candidates in chunk (${candidates.length}), using first`);
+                }
+
                 const firstCandidate = candidates[0] || {};
                 if (firstCandidate.finishReason) {
                     finishReason = firstCandidate.finishReason;
@@ -76,6 +82,19 @@ export async function parseThinkingSSEResponse(response, originalModel) {
                 const parts = firstCandidate.content?.parts || [];
                 for (const part of parts) {
                     if (part.thought === true) {
+                        // Check if this is a redacted thinking block
+                        if (part.redacted === true || (!part.text && part.thoughtSignature)) {
+                            flushThinking();
+                            flushText();
+                            // Add redacted thinking part directly
+                            finalParts.push({
+                                thought: true,
+                                redacted: true,
+                                thoughtSignature: part.thoughtSignature || ''
+                            });
+                            continue;
+                        }
+
                         flushText();
                         accumulatedThinkingText += (part.text || '');
                         if (part.thoughtSignature) {

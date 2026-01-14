@@ -69,6 +69,12 @@ export async function* streamSSEResponse(
         }
 
         const candidates = innerResponse.candidates || [];
+
+        // Log when multiple candidates are present (we only use the first)
+        if (candidates.length > 1) {
+          logger.debug(`[SSE] Multiple candidates in chunk (${candidates.length}), using first`);
+        }
+
         const firstCandidate = candidates[0] || {};
         const content = firstCandidate.content || {};
         const parts = content.parts || [];
@@ -103,6 +109,37 @@ export async function* streamSSEResponse(
             // Handle thinking block
             const text = part.text || "";
             const signature = part.thoughtSignature || "";
+
+            // Check if this is a redacted thinking block
+            if (part.redacted === true || (!text && signature)) {
+              // Close any open block first
+              if (currentBlockType !== null) {
+                if (currentBlockType === "thinking" && currentThinkingSignature) {
+                  yield {
+                    type: "content_block_delta",
+                    index: blockIndex,
+                    delta: {
+                      type: "signature_delta",
+                      signature: currentThinkingSignature,
+                    },
+                  };
+                  currentThinkingSignature = "";
+                }
+                yield { type: "content_block_stop", index: blockIndex };
+                blockIndex++;
+              }
+
+              // Emit redacted_thinking as a complete block
+              yield {
+                type: "content_block_start",
+                index: blockIndex,
+                content_block: { type: "redacted_thinking", data: signature },
+              };
+              yield { type: "content_block_stop", index: blockIndex };
+              blockIndex++;
+              currentBlockType = null;
+              continue;
+            }
 
             if (currentBlockType !== "thinking") {
               if (currentBlockType !== null) {
@@ -263,6 +300,46 @@ export async function* streamSSEResponse(
             yield { type: "content_block_stop", index: blockIndex };
             blockIndex++;
             currentBlockType = null;
+          } else if (part.fileData) {
+            // Handle URL-referenced files from Google format
+            if (currentBlockType === "thinking" && currentThinkingSignature) {
+              yield {
+                type: "content_block_delta",
+                index: blockIndex,
+                delta: {
+                  type: "signature_delta",
+                  signature: currentThinkingSignature,
+                },
+              };
+              currentThinkingSignature = "";
+            }
+            if (currentBlockType !== null) {
+              yield { type: "content_block_stop", index: blockIndex };
+              blockIndex++;
+            }
+
+            // Determine content type based on MIME type
+            const mimeType = part.fileData.mimeType || "application/octet-stream";
+            const isImage = mimeType.startsWith("image/");
+
+            currentBlockType = isImage ? "image" : "document";
+
+            yield {
+              type: "content_block_start",
+              index: blockIndex,
+              content_block: {
+                type: currentBlockType,
+                source: {
+                  type: "url",
+                  media_type: mimeType,
+                  url: part.fileData.fileUri,
+                },
+              },
+            };
+
+            yield { type: "content_block_stop", index: blockIndex };
+            blockIndex++;
+            currentBlockType = null;
           }
         }
 
@@ -287,15 +364,21 @@ export async function* streamSSEResponse(
   } else {
     // Close any open block
     if (currentBlockType !== null) {
-      if (currentBlockType === "thinking" && currentThinkingSignature) {
-        yield {
-          type: "content_block_delta",
-          index: blockIndex,
-          delta: {
-            type: "signature_delta",
-            signature: currentThinkingSignature,
-          },
-        };
+      if (currentBlockType === "thinking") {
+        if (currentThinkingSignature) {
+          yield {
+            type: "content_block_delta",
+            index: blockIndex,
+            delta: {
+              type: "signature_delta",
+              signature: currentThinkingSignature,
+            },
+          };
+        } else {
+          // Warn about orphaned thinking block without signature
+          // This can happen if stream ends unexpectedly before signature arrives
+          logger.warn("[SSE] Thinking block ended without valid signature - client may reject it");
+        }
       }
       yield { type: "content_block_stop", index: blockIndex };
     }

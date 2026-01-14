@@ -8,6 +8,21 @@ import { getCachedSignatureFamily } from './signature-cache.js';
 import { logger } from '../utils/logger.js';
 
 /**
+ * Synthetic messages used for conversation recovery.
+ * These are inserted when thinking blocks need to be stripped and the
+ * conversation state needs repair (e.g., interrupted tool loops).
+ */
+export const SYNTHETIC_MESSAGES = {
+    // Used when a tool call was started but interrupted before completion
+    TOOL_INTERRUPTED: 'I was in the middle of using a tool when the conversation was interrupted. Let me continue.',
+    // Used when tool results have been received but no response followed
+    TOOL_COMPLETED_SINGLE: 'Tool execution completed successfully.',
+    TOOL_COMPLETED_MULTIPLE: (count) => `Completed ${count} tool executions successfully.`,
+    // User prompt to continue after synthetic assistant message
+    CONTINUE_PROMPT: 'Please continue with the task.'
+};
+
+/**
  * Check if a part is a thinking block
  * @param {Object} part - Content part to check
  * @returns {boolean} True if the part is a thinking block
@@ -536,15 +551,15 @@ export function closeToolLoopForThinking(messages, targetFamily = null) {
         // Insert synthetic assistant message acknowledging interruption
         modified.splice(insertIdx, 0, {
             role: 'assistant',
-            content: [{ type: 'text', text: '[Tool call was interrupted.]' }]
+            content: [{ type: 'text', text: SYNTHETIC_MESSAGES.TOOL_INTERRUPTED }]
         });
 
         logger.debug('[ThinkingUtils] Applied thinking recovery for interrupted tool');
     } else if (state.inToolLoop) {
         // For tool loops: add synthetic messages to close the loop
         const syntheticText = state.toolResultCount === 1
-            ? '[Tool execution completed.]'
-            : `[${state.toolResultCount} tool executions completed.]`;
+            ? SYNTHETIC_MESSAGES.TOOL_COMPLETED_SINGLE
+            : SYNTHETIC_MESSAGES.TOOL_COMPLETED_MULTIPLE(state.toolResultCount);
 
         // Inject synthetic model message to complete the turn
         modified.push({
@@ -555,7 +570,7 @@ export function closeToolLoopForThinking(messages, targetFamily = null) {
         // Inject synthetic user message to start fresh
         modified.push({
             role: 'user',
-            content: [{ type: 'text', text: '[Continue]' }]
+            content: [{ type: 'text', text: SYNTHETIC_MESSAGES.CONTINUE_PROMPT }]
         });
 
         logger.debug('[ThinkingUtils] Applied thinking recovery for tool loop');

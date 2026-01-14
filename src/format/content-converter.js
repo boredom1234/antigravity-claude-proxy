@@ -181,7 +181,63 @@ export function convertContentToParts(content, isClaudeModel = false, isGeminiMo
                 });
             }
             // Unsigned thinking blocks are dropped (existing behavior)
+        } else if (block.type === 'redacted_thinking') {
+            // Handle redacted thinking blocks - convert to Google format
+            // The 'data' field contains the signature/encrypted content
+            if (block.data) {
+                parts.push({
+                    thought: true,
+                    redacted: true,
+                    thoughtSignature: block.data
+                });
+            }
+        } else if (block.type === 'server_tool_use') {
+            // Handle server-side tool use blocks
+            // Google doesn't support these directly, so we convert to text representation
+            logger.debug(`[ContentConverter] Converting server_tool_use to text: ${block.name}`);
+            parts.push({
+                text: `[Server tool call: ${block.name}(${JSON.stringify(block.input || {})})]`
+            });
+        } else if (block.type === 'server_tool_result') {
+            // Handle server-side tool result blocks
+            // Google doesn't support these directly, so we convert to text representation
+            const resultContent = typeof block.content === 'string'
+                ? block.content
+                : JSON.stringify(block.content);
+            parts.push({
+                text: `[Server tool result: ${resultContent}]`
+            });
+        } else if (block.type === 'mcp_tool_use') {
+            // Handle MCP (Model Context Protocol) tool use blocks
+            // Convert to regular function call format
+            const mcpName = `mcp_${block.server_name || 'unknown'}_${block.name}`;
+            const functionCall = {
+                name: mcpName,
+                args: block.input || {}
+            };
+            if (isClaudeModel && block.id) {
+                functionCall.id = block.id;
+            }
+            parts.push({ functionCall });
+        } else if (block.type === 'mcp_tool_result') {
+            // Handle MCP tool result blocks
+            const mcpName = `mcp_${block.server_name || 'unknown'}_${block.name}`;
+            const functionResponse = {
+                name: mcpName,
+                response: { result: block.content }
+            };
+            if (isClaudeModel && block.tool_use_id) {
+                functionResponse.id = block.tool_use_id;
+            }
+            parts.push({ functionResponse });
         }
+    }
+
+    // Ensure we never return empty parts array - Google API requires at least one part
+    // This can happen when all blocks are filtered (e.g., all unsigned thinking)
+    if (parts.length === 0) {
+        logger.debug('[ContentConverter] All parts filtered out, adding placeholder');
+        return [{ text: '.' }];  // Minimal placeholder that satisfies API requirement
     }
 
     return parts;

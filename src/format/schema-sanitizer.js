@@ -600,11 +600,22 @@ function toGoogleType(type) {
  * Uses a multi-phase pipeline matching opencode-antigravity-auth approach.
  *
  * @param {Object} schema - The JSON schema to clean
+ * @param {number} _depth - Internal: recursion depth counter
  * @returns {Object} Cleaned schema safe for Gemini API
  */
-export function cleanSchema(schema) {
+const MAX_SCHEMA_DEPTH = 50;
+
+export function cleanSchema(schema, _depth = 0) {
     if (!schema || typeof schema !== 'object') return schema;
-    if (Array.isArray(schema)) return schema.map(cleanSchema);
+    if (Array.isArray(schema)) return schema.map(s => cleanSchema(s, _depth));
+
+    // Protect against excessive recursion depth
+    if (_depth > MAX_SCHEMA_DEPTH) {
+        return {
+            type: 'OBJECT',
+            description: 'Schema truncated due to excessive nesting depth'
+        };
+    }
 
     // Phase 1: Convert $refs to hints
     let result = convertRefsToHints(schema);
@@ -651,16 +662,16 @@ export function cleanSchema(schema) {
     if (result.properties && typeof result.properties === 'object') {
         const newProps = {};
         for (const [key, value] of Object.entries(result.properties)) {
-            newProps[key] = cleanSchema(value);
+            newProps[key] = cleanSchema(value, _depth + 1);
         }
         result.properties = newProps;
     }
 
     if (result.items) {
         if (Array.isArray(result.items)) {
-            result.items = result.items.map(cleanSchema);
+            result.items = result.items.map(item => cleanSchema(item, _depth + 1));
         } else if (typeof result.items === 'object') {
-            result.items = cleanSchema(result.items);
+            result.items = cleanSchema(result.items, _depth + 1);
         }
     }
 

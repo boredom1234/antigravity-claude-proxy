@@ -348,7 +348,7 @@ const tests = [
       const testPreset = {
         name: "__test_preset__",
         config: {
-          ANTHROPIC_BASE_URL: "http://localhost:8080",
+          ANTHROPIC_BASE_URL: "http://localhost:8672",
           ANTHROPIC_MODEL: "test-model",
         },
       };
