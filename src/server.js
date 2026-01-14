@@ -155,7 +155,8 @@ app.use((req, res, next) => {
 // Serve WebUI static files
 // Only mount if WebUI is enabled (default true)
 // Note: WebUI mounting happens before API routes to avoid conflicts if we ever have root routes
-mountWebUI(app, __dirname, accountManager);
+// Pass getter function since accountManager is lazy-initialized on first request
+mountWebUI(app, __dirname, () => accountManager);
 
 /**
  * Validate the fallback map for cycles at startup

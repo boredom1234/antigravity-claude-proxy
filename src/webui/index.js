@@ -123,9 +123,9 @@ export function createAuthMiddleware() {
  * Mount WebUI routes and middleware on Express app
  * @param {Express} app - Express application instance
  * @param {string} dirname - __dirname of the calling module (for static file path)
- * @param {AccountManager} accountManager - Account manager instance
+ * @param {Function} getAccountManager - Function that returns the AccountManager instance
  */
-export function mountWebUI(app, dirname, accountManager) {
+export function mountWebUI(app, dirname, getAccountManager) {
   // Apply auth middleware
   app.use(createAuthMiddleware());
 
@@ -157,7 +157,7 @@ export function mountWebUI(app, dirname, accountManager) {
    */
   app.get("/api/accounts", async (req, res) => {
     try {
-      const status = accountManager.getStatus();
+      const status = getAccountManager().getStatus();
       res.json({
         status: "ok",
         accounts: status.accounts,
@@ -179,8 +179,8 @@ export function mountWebUI(app, dirname, accountManager) {
   app.post("/api/accounts/:email/refresh", async (req, res) => {
     try {
       const { email } = req.params;
-      accountManager.clearTokenCache(email);
-      accountManager.clearProjectCache(email);
+      getAccountManager().clearTokenCache(email);
+      getAccountManager().clearProjectCache(email);
       res.json({
         status: "ok",
         message: `Token cache cleared for ${email}`,
@@ -197,7 +197,7 @@ export function mountWebUI(app, dirname, accountManager) {
     try {
       const { email } = req.params;
       const { enabled } = req.body;
-      await accountManager.toggleAccount(email, enabled);
+      await getAccountManager().toggleAccount(email, enabled);
       res.json({
         status: "ok",
         message: `Account ${email} ${enabled ? "enabled" : "disabled"}`,
@@ -213,7 +213,7 @@ export function mountWebUI(app, dirname, accountManager) {
   app.delete("/api/accounts/:email", async (req, res) => {
     try {
       const { email } = req.params;
-      await accountManager.removeAccount(email);
+      await getAccountManager().removeAccount(email);
 
       res.json({
         status: "ok",
@@ -230,9 +230,9 @@ export function mountWebUI(app, dirname, accountManager) {
   app.post("/api/accounts/reload", async (req, res) => {
     try {
       // Reload AccountManager from disk
-      await accountManager.reload();
+      await getAccountManager().reload();
 
-      const status = accountManager.getStatus();
+      const status = getAccountManager().getStatus();
       res.json({
         status: "ok",
         message: "Accounts reloaded from disk",
@@ -424,9 +424,8 @@ export function mountWebUI(app, dirname, accountManager) {
    */
   app.get("/api/settings", async (req, res) => {
     try {
-      const settings = accountManager.getSettings
-        ? accountManager.getSettings()
-        : {};
+      const am = getAccountManager();
+      const settings = am?.getSettings ? am.getSettings() : {};
       res.json({
         status: "ok",
         settings: {
@@ -753,7 +752,7 @@ export function mountWebUI(app, dirname, accountManager) {
             const accountData = await completeOAuthFlow(code, verifier);
 
             // Add or update the account
-            await accountManager.addAccount({
+            await getAccountManager().addAccount({
               email: accountData.email,
               refreshToken: accountData.refreshToken,
               projectId: accountData.projectId,
