@@ -294,7 +294,7 @@ export class AccountManager {
    * @param {string} [modelId] - Optional model ID to mark specific limit
    */
   markRateLimited(email, resetMs = null, modelId = null) {
-    markLimited(this.#accounts, email, resetMs, modelId);
+    markLimited(this.#accounts, email, resetMs, this.#settings, modelId);
     this.saveToDisk();
   }
 

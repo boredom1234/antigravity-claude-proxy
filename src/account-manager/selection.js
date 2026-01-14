@@ -13,7 +13,9 @@ import {
   MAX_WAIT_BEFORE_ERROR_MS,
   STICKY_COOLDOWN_THRESHOLD_MS,
   MAX_CONCURRENT_REQUESTS,
+  MIN_QUOTA_FRACTION,
 } from "../constants.js";
+import { config } from "../config.js";
 import { formatDuration } from "../utils/helpers.js";
 import { logger } from "../utils/logger.js";
 import { clearExpiredLimits, getAvailableAccounts } from "./rate-limits.js";
@@ -42,6 +44,19 @@ function isAccountUsable(account, modelId) {
   if ((account.activeRequests || 0) >= MAX_CONCURRENT_REQUESTS) {
       logger.debug(`[AccountManager] Account ${account.email} unusable: Concurrency limit (${account.activeRequests}/${MAX_CONCURRENT_REQUESTS})`);
       return false;
+  }
+
+  // Check quota limit (only for Antigravity mode)
+  if (config.geminiHeaderMode === 'antigravity' && modelId && account.quota?.models?.[modelId]) {
+    const quota = account.quota.models[modelId];
+    if (typeof quota.remainingFraction === 'number' && quota.remainingFraction < MIN_QUOTA_FRACTION) {
+      logger.debug(
+        `[AccountManager] Account ${account.email} unusable: Low quota for ${modelId} (${(
+          quota.remainingFraction * 100
+        ).toFixed(1)}% < ${MIN_QUOTA_FRACTION * 100}%)`
+      );
+      return false;
+    }
   }
 
   if (modelId && account.modelRateLimits && account.modelRateLimits[modelId]) {
