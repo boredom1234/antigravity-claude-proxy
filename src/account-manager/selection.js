@@ -50,12 +50,18 @@ function isAccountUsable(account, modelId) {
   if (config.geminiHeaderMode === 'antigravity' && modelId && account.quota?.models?.[modelId]) {
     const quota = account.quota.models[modelId];
     if (typeof quota.remainingFraction === 'number' && quota.remainingFraction < MIN_QUOTA_FRACTION) {
-      logger.debug(
-        `[AccountManager] Account ${account.email} unusable: Low quota for ${modelId} (${(
-          quota.remainingFraction * 100
-        ).toFixed(1)}% < ${MIN_QUOTA_FRACTION * 100}%)`
-      );
-      return false;
+      // If reset time has passed, we ignore the low quota and let it try (and potentially fail/refresh)
+      const now = Date.now();
+      const resetTimeMs = quota.resetTime ? new Date(quota.resetTime).getTime() : null;
+
+      if (!resetTimeMs || resetTimeMs > now) {
+        logger.debug(
+          `[AccountManager] Account ${account.email} unusable: Low quota for ${modelId} (${(
+            quota.remainingFraction * 100
+          ).toFixed(1)}% < ${MIN_QUOTA_FRACTION * 100}%)`
+        );
+        return false;
+      }
     }
   }
 

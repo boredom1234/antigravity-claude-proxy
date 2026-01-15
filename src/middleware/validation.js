@@ -38,10 +38,23 @@ export function contentTypeMiddleware(req, res, next) {
   if (req.method === "POST") {
     const contentType = req.headers["content-type"];
     if (!contentType || !contentType.includes("application/json")) {
-        // Skip validation for /refresh-token endpoint (often called with empty body)
-        if (req.path === "/refresh-token" && req.method === "POST") {
-            return next();
-        }
+      // Skip validation for endpoints that don't require a JSON body
+      const skipPaths = [
+        "/refresh-token",
+        "/api/accounts/reload",
+        "/api/claude/config/restore",
+      ];
+      // Also skip dynamic account action paths like /api/accounts/:email/refresh
+      const skipPatterns = [
+        /^\/api\/accounts\/[^/]+\/refresh$/,
+        /^\/api\/accounts\/[^/]+\/toggle$/,
+      ];
+      if (
+        skipPaths.includes(req.path) ||
+        skipPatterns.some((p) => p.test(req.path))
+      ) {
+        return next();
+      }
       return res.status(415).json({
         type: "error",
         error: {
@@ -194,7 +207,9 @@ export function validateMessagesRequest(body) {
       body.top_p < MIN_TOP_P ||
       body.top_p > MAX_TOP_P
     ) {
-      errors.push(`top_p must be a number between ${MIN_TOP_P} and ${MAX_TOP_P}`);
+      errors.push(
+        `top_p must be a number between ${MIN_TOP_P} and ${MAX_TOP_P}`
+      );
     }
   }
 

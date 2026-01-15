@@ -145,6 +145,15 @@ export class AccountManager {
   }
 
   /**
+   * Find an account by email
+   * @param {string} email - Email of the account
+   * @returns {Object|null} Account object or null if not found
+   */
+  findAccount(email) {
+    return this.#accounts.find((a) => a.email === email) || null;
+  }
+
+  /**
    * Check if all accounts are rate-limited
    * @param {string} [modelId] - Optional model ID
    * @returns {boolean} True if all accounts are rate-limited

@@ -896,7 +896,7 @@ app.post("/api/event_logging/batch", (req, res) => {
       // Ignore parsing errors for logging
     }
   }
-  res.status(200).send("OK");
+  res.json({ status: "ok" });
 });
 
 // 404 Handler

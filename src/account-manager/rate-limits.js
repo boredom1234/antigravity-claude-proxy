@@ -5,7 +5,12 @@
  * All rate limits are model-specific and quota-type aware (CLI vs Antigravity).
  */
 
-import { DEFAULT_COOLDOWN_MS, MAX_CONCURRENT_REQUESTS } from "../constants.js";
+import {
+  DEFAULT_COOLDOWN_MS,
+  MAX_CONCURRENT_REQUESTS,
+  MIN_QUOTA_FRACTION,
+} from "../constants.js";
+import { config } from "../config.js";
 import { formatDuration } from "../utils/helpers.js";
 import { logger } from "../utils/logger.js";
 
@@ -47,7 +52,30 @@ export function isAllRateLimited(accounts, modelId, quotaType = null) {
     const activeReqs = acc.activeRequests || 0;
     const isConcurrencyLimited = activeReqs >= MAX_CONCURRENT_REQUESTS;
 
-    return isRateLimited || isConcurrencyLimited;
+    // Check quota limit (only for Antigravity mode)
+    let isQuotaLimited = false;
+    if (
+      config.geminiHeaderMode === "antigravity" &&
+      modelId &&
+      acc.quota?.models?.[modelId]
+    ) {
+      const quota = acc.quota.models[modelId];
+      if (
+        typeof quota.remainingFraction === "number" &&
+        quota.remainingFraction < MIN_QUOTA_FRACTION
+      ) {
+        // Only consider it limited if we don't have a reset time, or if reset time is in the future
+        const resetTimeMs = quota.resetTime
+          ? new Date(quota.resetTime).getTime()
+          : null;
+
+        if (!resetTimeMs || resetTimeMs > Date.now()) {
+          isQuotaLimited = true;
+        }
+      }
+    }
+
+    return isRateLimited || isConcurrencyLimited || isQuotaLimited;
   });
 }
 
@@ -79,6 +107,28 @@ export function getAvailableAccounts(
       const limit = acc.modelRateLimits[quotaKey];
       if (limit.isRateLimited && limit.resetTime > Date.now()) {
         return false;
+      }
+    }
+
+    // Check quota limit (only for Antigravity mode)
+    if (
+      config.geminiHeaderMode === "antigravity" &&
+      modelId &&
+      acc.quota?.models?.[modelId]
+    ) {
+      const quota = acc.quota.models[modelId];
+      if (
+        typeof quota.remainingFraction === "number" &&
+        quota.remainingFraction < MIN_QUOTA_FRACTION
+      ) {
+        // Only consider it limited if we don't have a reset time, or if reset time is in the future
+        const resetTimeMs = quota.resetTime
+          ? new Date(quota.resetTime).getTime()
+          : null;
+
+        if (!resetTimeMs || resetTimeMs > Date.now()) {
+          return false;
+        }
       }
     }
 
@@ -302,6 +352,45 @@ export function getMinWaitTimeMs(accounts, modelId, quotaType = null) {
       // If capped by concurrency, we count it as active but effectively unavailable.
       // We don't have a specific reset time for concurrency.
       activeCount++;
+      continue;
+    }
+
+    // Check quota limit (only for Antigravity mode)
+    let isQuotaLimited = false;
+    let quotaResetTime = null;
+
+    if (
+      config.geminiHeaderMode === "antigravity" &&
+      modelId &&
+      acc.quota?.models?.[modelId]
+    ) {
+      const quota = acc.quota.models[modelId];
+      if (
+        typeof quota.remainingFraction === "number" &&
+        quota.remainingFraction < MIN_QUOTA_FRACTION
+      ) {
+        // Only consider it limited if we don't have a reset time, or if reset time is in the future
+        const resetTimeMs = quota.resetTime
+          ? new Date(quota.resetTime).getTime()
+          : null;
+
+        if (!resetTimeMs || resetTimeMs > Date.now()) {
+          isQuotaLimited = true;
+          if (resetTimeMs) {
+             quotaResetTime = resetTimeMs;
+          }
+        }
+      }
+    }
+
+    if (isQuotaLimited) {
+      activeCount++;
+      if (quotaResetTime) {
+        const wait = quotaResetTime - now;
+        if (wait > 0 && wait < minWait) {
+          minWait = wait;
+        }
+      }
       continue;
     }
 

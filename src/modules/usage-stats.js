@@ -253,23 +253,35 @@ function setupMiddleware(app) {
  */
 function setupRoutes(app) {
   app.get("/api/stats/history", (req, res) => {
-    // Sort keys to ensure chronological order
-    const sortedKeys = Object.keys(history).sort();
-    const sortedData = {};
-    sortedKeys.forEach((key) => {
-      sortedData[key] = history[key];
-    });
-    res.json(sortedData);
+    try {
+      // Sort keys to ensure chronological order
+      const sortedKeys = Object.keys(history).sort();
+      const sortedData = {};
+      sortedKeys.forEach((key) => {
+        sortedData[key] = history[key];
+      });
+      res.json(sortedData);
+    } catch (error) {
+      res.status(500).json({ status: "error", error: error.message });
+    }
   });
 
   // Token stats endpoint
   app.get("/api/stats/tokens", (req, res) => {
-    res.json(getTokenStats());
+    try {
+      res.json(getTokenStats());
+    } catch (error) {
+      res.status(500).json({ status: "error", error: error.message });
+    }
   });
 
   // Session info endpoint
   app.get("/api/stats/session", (req, res) => {
-    res.json(getSessionInfo());
+    try {
+      res.json(getSessionInfo());
+    } catch (error) {
+      res.status(500).json({ status: "error", error: error.message });
+    }
   });
 }
 

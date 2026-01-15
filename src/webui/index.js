@@ -179,6 +179,12 @@ export function mountWebUI(app, dirname, getAccountManager) {
   app.post("/api/accounts/:email/refresh", async (req, res) => {
     try {
       const { email } = req.params;
+      const account = getAccountManager().findAccount(email);
+      if (!account) {
+        return res
+          .status(404)
+          .json({ status: "error", error: "Account not found" });
+      }
       getAccountManager().clearTokenCache(email);
       getAccountManager().clearProjectCache(email);
       res.json({
@@ -197,6 +203,22 @@ export function mountWebUI(app, dirname, getAccountManager) {
     try {
       const { email } = req.params;
       const { enabled } = req.body;
+
+      // Validate enabled is a boolean
+      if (typeof enabled !== "boolean") {
+        return res.status(400).json({
+          status: "error",
+          error: "enabled must be a boolean",
+        });
+      }
+
+      const account = getAccountManager().findAccount(email);
+      if (!account) {
+        return res
+          .status(404)
+          .json({ status: "error", error: "Account not found" });
+      }
+
       await getAccountManager().toggleAccount(email, enabled);
       res.json({
         status: "ok",
@@ -213,6 +235,13 @@ export function mountWebUI(app, dirname, getAccountManager) {
   app.delete("/api/accounts/:email", async (req, res) => {
     try {
       const { email } = req.params;
+      const account = getAccountManager().findAccount(email);
+      if (!account) {
+        return res
+          .status(404)
+          .json({ status: "error", error: "Account not found" });
+      }
+
       await getAccountManager().removeAccount(email);
 
       res.json({
@@ -236,7 +265,12 @@ export function mountWebUI(app, dirname, getAccountManager) {
       res.json({
         status: "ok",
         message: "Accounts reloaded from disk",
-        summary: status.summary,
+        summary: {
+          total: status.total,
+          available: status.available,
+          rateLimited: status.rateLimited,
+          invalid: status.invalid,
+        },
       });
     } catch (error) {
       res.status(500).json({ status: "error", error: error.message });
