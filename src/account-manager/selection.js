@@ -19,6 +19,7 @@ import { config } from "../config.js";
 import { formatDuration } from "../utils/helpers.js";
 import { logger } from "../utils/logger.js";
 import { clearExpiredLimits, getAvailableAccounts } from "./rate-limits.js";
+import { shouldBreakStickiness, findBestQuotaAccount } from "./quota-balancer.js";
 
 /**
  * Check if an account is usable for a specific model
@@ -266,6 +267,12 @@ export function pickStickyAccount(
       if (isAccountUsable(account, modelId)) {
         stickyAccount = account;
         stickyIndex = index;
+        // Check if we should break stickiness due to low quota
+        if (stickyAccount && shouldBreakStickiness(stickyAccount, accounts, modelId)) {
+          logger.info(`[AccountManager] Breaking stickiness for ${email} due to low quota/imbalance.`);
+          stickyAccount = null;
+          // Don't delete from map yet, we'll overwrite it if we find a new one
+        }
       } else {
         // Mapped account is unusable (rate limited/invalid)
         // We must switch.
@@ -284,14 +291,30 @@ export function pickStickyAccount(
     return { account: stickyAccount, waitMs: 0, newIndex: currentIndex };
   }
 
-  // 3. Fallback: Pick NEXT available account (Round Robin)
+  // 3. Fallback: Pick BEST available account (Quota Aware or Round Robin)
   // This balances load for new sessions or when sticky account fails
-  const { account: nextAccount, newIndex } = pickNext(
-    accounts,
-    currentIndex,
-    onSave,
-    modelId
-  );
+  
+  // Try to find account with best quota first
+  let nextAccount = findBestQuotaAccount(accounts, modelId);
+  let newIndex = currentIndex;
+  
+  // If no "best" found (or all equal), fall back to round robin
+  if (!nextAccount) {
+      const result = pickNext(
+        accounts,
+        currentIndex,
+        onSave,
+        modelId
+      );
+      nextAccount = result.account;
+      newIndex = result.newIndex;
+  } else {
+      // Update index to match selected account
+      newIndex = accounts.indexOf(nextAccount);
+      // Update lastUsed
+      nextAccount.lastUsed = Date.now();
+      if (onSave) onSave();
+  }
 
   if (nextAccount) {
     if (sessionId && sessionMap) {

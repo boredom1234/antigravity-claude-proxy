@@ -15,6 +15,7 @@ import {
 } from "../constants.js";
 import { config } from "../config.js";
 import {
+  RateLimitError,
   isRateLimitError,
   isAuthError,
   isEmptyResponseError,
@@ -24,8 +25,9 @@ import { logger } from "../utils/logger.js";
 import { parseResetTime } from "./rate-limit-parser.js";
 import { buildCloudCodeRequest, buildHeaders } from "./request-builder.js";
 import { streamSSEResponse } from "./sse-streamer.js";
-import { getFallbackModel } from "../fallback-config.js";
+import { getFallbackChain } from "../fallback-config.js";
 import { deriveSessionId } from "./session-manager.js";
+import usageStats from "../modules/usage-stats.js";
 import crypto from "crypto";
 
 /**
@@ -58,6 +60,10 @@ export async function* sendMessageStream(
   );
 
   for (let attempt = 0; attempt < maxAttempts; attempt++) {
+    // Track retries
+    if (attempt > 0) {
+      usageStats.trackRetry();
+    }
     // Use sticky account selection for cache continuity
     const { account: stickyAccount, waitMs } = accountManager.pickStickyAccount(
       model,
@@ -81,12 +87,15 @@ export async function* sendMessageStream(
         const allWaitMs = accountManager.getMinWaitTimeMs(model);
         const resetTime = new Date(Date.now() + allWaitMs).toISOString();
 
-        // If wait time is too long (> 2 minutes), throw error immediately
-        if (allWaitMs > MAX_WAIT_BEFORE_ERROR_MS) {
-          throw new Error(
+        // Always wait unless configured max is exceeded AND infinite mode is off
+        const shouldWait = config.infiniteRetryMode || allWaitMs <= MAX_WAIT_BEFORE_ERROR_MS;
+
+        if (!shouldWait) {
+          throw new RateLimitError(
             `RESOURCE_EXHAUSTED: Rate limited on ${model}. Quota will reset after ${formatDuration(
               allWaitMs
-            )}. Next available: ${resetTime}`
+            )}. Next available: ${resetTime}`,
+            allWaitMs
           );
         }
 
@@ -97,7 +106,13 @@ export async function* sendMessageStream(
             allWaitMs
           )}...`
         );
-        await sleep(allWaitMs);
+        
+        
+        // Track wait time
+        usageStats.trackWait(allWaitMs);
+
+        // Emit SSE progress events during wait
+        yield* emitWaitProgress(model, allWaitMs);
 
         // Add small buffer after waiting to ensure rate limits have truly expired
         await sleep(500);
@@ -117,19 +132,31 @@ export async function* sendMessageStream(
 
       if (!account) {
         // Check if fallback is enabled and available
-        if (fallbackEnabled) {
-          const fallbackModel = getFallbackModel(model);
-          if (fallbackModel) {
+        if (fallbackEnabled || config.autoFallback) {
+          const fallbackChain = getFallbackChain(model);
+          if (fallbackChain && fallbackChain.length > 0) {
             logger.warn(
-              `[CloudCode] All accounts exhausted for ${model}. Attempting fallback to ${fallbackModel} (streaming)`
+              `[CloudCode] All accounts exhausted for ${model}. Attempting fallback chain: ${fallbackChain.join(
+                " -> "
+              )} (streaming)`
             );
-            // Retry with fallback model
-            const fallbackRequest = {
-              ...anthropicRequest,
-              model: fallbackModel,
-            };
-            yield* sendMessageStream(fallbackRequest, accountManager, false); // Disable fallback for recursive call
-            return;
+            
+            // Try chain
+            for (const fallbackModel of fallbackChain) {
+              try {
+                  // Retry with fallback model
+                  usageStats.trackFallback(model, fallbackModel);
+                  const fallbackRequest = {
+                    ...anthropicRequest,
+                    model: fallbackModel,
+                  };
+                  yield* sendMessageStream(fallbackRequest, accountManager, false); // Disable fallback for recursive call
+                  return;
+              } catch (err) {
+                 logger.warn(`[CloudCode] Fallback ${fallbackModel} failed: ${err.message}`);
+                 // Continue to next fallback
+              }
+            }
           }
         }
         throw new Error("No accounts available");
@@ -232,6 +259,9 @@ export async function* sendMessageStream(
                 headerMode
               );
               logger.debug("[CloudCode] Stream completed");
+              if (attempt > 0) {
+                usageStats.trackRetrySuccess();
+              }
               return;
             } catch (streamError) {
               // Only retry on EmptyResponseError
@@ -392,16 +422,28 @@ export async function* sendMessageStream(
     }
   }
 
-  // All retries exhausted - try fallback model if enabled
-  if (fallbackEnabled) {
-    const fallbackModel = getFallbackModel(model);
-    if (fallbackModel) {
+  // All retries exhausted - try fallback model chain
+  if (fallbackEnabled || config.autoFallback) {
+    const fallbackChain = getFallbackChain(model);
+    if (fallbackChain && fallbackChain.length > 0) {
       logger.warn(
-        `[CloudCode] All retries exhausted for ${model}. Attempting fallback to ${fallbackModel} (streaming)`
+        `[CloudCode] All retries exhausted for ${model}. Attempting fallback chain: ${fallbackChain.join(
+          " -> "
+        )} (streaming)`
       );
-      const fallbackRequest = { ...anthropicRequest, model: fallbackModel };
-      yield* sendMessageStream(fallbackRequest, accountManager, false); // Disable fallback for recursive call
-      return;
+      
+      // Try chain
+      for (const fallbackModel of fallbackChain) {
+        try {
+          usageStats.trackFallback(model, fallbackModel);
+          const fallbackRequest = { ...anthropicRequest, model: fallbackModel };
+          yield* sendMessageStream(fallbackRequest, accountManager, false); // Disable fallback for recursive call
+          return;
+        } catch (err) {
+           logger.warn(`[CloudCode] Fallback ${fallbackModel} failed: ${err.message}`);
+           // Continue to next fallback
+        }
+      }
     }
   }
 
@@ -455,4 +497,36 @@ function* emitEmptyResponseFallback(model) {
   };
 
   yield { type: "message_stop" };
+}
+/**
+ * Emit SSE progress events during rate limit waits
+ * @param {string} model - The model name
+ * @param {number} waitMs - Total time to wait in ms
+ * @yields {Object} Anthropic-format SSE events for progress updates
+ */
+async function* emitWaitProgress(model, waitMs) {
+  let elapsed = 0;
+  const interval = 10000; // 10s updates
+
+  while (elapsed < waitMs) {
+    const chunk = Math.min(interval, waitMs - elapsed);
+    await sleep(chunk);
+    elapsed += chunk;
+
+    if (config.waitProgressUpdates && elapsed < waitMs) {
+       const remaining = waitMs - elapsed;
+       // We use a content block delta to show progress text in the client
+       // This might be risky if clients don't handle interleaved text well,
+       // but most should append it.
+       // Alternatively, we could just send comments (ping frames) if supported,
+       // but standard Anthropic protocol doesn't strictly define ping frames visible to user.
+       // The safe bet is to just log on server side, but user requested "unlimited feel".
+       // Let's send a ping event (comment) which keeps connection alive but doesn't show text.
+       // Actually, the plan suggested text_delta. Let's send a "ping" event type which is custom but safe.
+       yield {
+          type: "ping",
+          msg: `Waiting for quota... ${formatDuration(remaining)} remaining`
+       };
+    }
+  }
 }

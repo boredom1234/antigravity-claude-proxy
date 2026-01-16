@@ -31,6 +31,16 @@ let tokenStats = {
   lastUpdated: null,
 };
 
+// Retry/Fallback statistics (session-based)
+let retryStats = {
+  totalRetries: 0, // Total number of request retries attempted
+  successfulRetries: 0, // Retries that eventually succeeded
+  fallbacksUsed: 0, // Number of times fallback models were used
+  totalWaitMs: 0, // Total time spent waiting for rate limits
+  averageWaitMs: 0, // Average wait time per wait event
+  waitCount: 0, // Number of wait events
+};
+
 /**
  * Wrapper for getModelFamily that maps 'unknown' to 'other' for usage stats
  * @param {string} modelId - The model identifier
@@ -197,6 +207,47 @@ function getTokenStats() {
 }
 
 /**
+ * Track a retry attempt
+ */
+function trackRetry() {
+  retryStats.totalRetries++;
+}
+
+/**
+ * Track a successful retry
+ */
+function trackRetrySuccess() {
+  retryStats.successfulRetries++;
+}
+
+/**
+ * Track a fallback event
+ * @param {string} fromModel - Original model
+ * @param {string} toModel - Fallback model
+ */
+function trackFallback(fromModel, toModel) {
+  retryStats.fallbacksUsed++;
+}
+
+/**
+ * Track a wait event
+ * @param {number} ms - Time waited in milliseconds
+ */
+function trackWait(ms) {
+  retryStats.waitCount++;
+  retryStats.totalWaitMs += ms;
+  retryStats.averageWaitMs = Math.round(retryStats.totalWaitMs / retryStats.waitCount);
+}
+
+/**
+ * Get current retry stats
+ * @returns {object} Retry statistics
+ */
+function getRetryStats() {
+  return { ...retryStats };
+}
+
+/**
  * Reset token stats (for new session)
  */
 function resetTokenStats() {
@@ -206,6 +257,15 @@ function resetTokenStats() {
     total: 0,
     cached: 0,
     lastUpdated: null,
+  };
+  // Also reset retry stats
+  retryStats = {
+    totalRetries: 0,
+    successfulRetries: 0,
+    fallbacksUsed: 0,
+    totalWaitMs: 0,
+    averageWaitMs: 0,
+    waitCount: 0,
   };
 }
 
@@ -283,6 +343,14 @@ function setupRoutes(app) {
       res.status(500).json({ status: "error", error: error.message });
     }
   });
+  // Retry stats endpoint
+  app.get("/api/stats/retries", (req, res) => {
+    try {
+      res.json(getRetryStats());
+    } catch (error) {
+      res.status(500).json({ status: "error", error: error.message });
+    }
+  });
 }
 
 /**
@@ -321,4 +389,9 @@ export default {
   getShortName,
   getHistory,
   getSessionInfo,
+  trackRetry,
+  trackRetrySuccess,
+  trackFallback,
+  trackWait,
+  getRetryStats,
 };

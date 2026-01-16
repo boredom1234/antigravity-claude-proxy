@@ -14,10 +14,14 @@ const DEFAULT_CONFIG = {
   retryMaxMs: 30000,
   persistTokenCache: false,
   defaultCooldownMs: 10000, // 10 seconds
-  maxWaitBeforeErrorMs: 120000, // 2 minutes
+  maxWaitBeforeErrorMs: 600000, // 10 minutes
   geminiHeaderMode: "cli", // 'cli' or 'antigravity'
   maxContextTokens: 500000, // Default to 500k tokens for context window
-  maxConcurrentRequests: 2, // Default concurrent requests per account
+  maxConcurrentRequests: 5, // Default concurrent requests per account
+  infiniteRetryMode: false, // When true, never error on rate limits - wait indefinitely
+  autoFallback: true, // Automatically fall back to alternative models
+  waitProgressUpdates: true, // Send SSE events while waiting for rate limits
+  aggressiveRetry: true, // Retry more aggressively on transient errors
   modelMapping: {},
 };
 
@@ -35,6 +39,10 @@ const ENV_MAPPING = {
   GEMINI_HEADER_MODE: "geminiHeaderMode",
   MAX_CONTEXT_TOKENS: "maxContextTokens",
   MAX_CONCURRENT_REQUESTS: "maxConcurrentRequests",
+  INFINITE_RETRY_MODE: "infiniteRetryMode",
+  AUTO_FALLBACK: "autoFallback",
+  WAIT_PROGRESS_UPDATES: "waitProgressUpdates",
+  AGGRESSIVE_RETRY: "aggressiveRetry",
 };
 
 // Config locations
@@ -89,7 +97,7 @@ function validateConfig(cfg) {
     },
     maxWaitBeforeErrorMs: {
       min: 5000,
-      max: 600000,
+      max: 3600000, // 1 hour
       default: DEFAULT_CONFIG.maxWaitBeforeErrorMs,
     },
     maxContextTokens: {
@@ -119,7 +127,14 @@ function validateConfig(cfg) {
   }
 
   // Validate boolean fields
-  const booleanFields = ["debug", "persistTokenCache"];
+  const booleanFields = [
+    "debug", 
+    "persistTokenCache", 
+    "infiniteRetryMode", 
+    "autoFallback", 
+    "waitProgressUpdates", 
+    "aggressiveRetry"
+  ];
   for (const key of booleanFields) {
     if (validated[key] !== undefined && typeof validated[key] !== "boolean") {
       validated[key] = String(validated[key]) === "true";

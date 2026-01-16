@@ -223,6 +223,39 @@ export function resetRateLimitsForModel(accounts, modelId, quotaType = null) {
 }
 
 /**
+ * Optimistically reset rate limits if they're close to expiring
+ * This reduces wait time for edge cases where limits expire during checks
+ *
+ * @param {Array} accounts - Array of account objects
+ * @param {string} modelId - Model ID to check
+ * @param {number} threshold - Threshold in ms (default 5000)
+ * @returns {number} Number of limits reset
+ */
+export function optimisticReset(accounts, modelId, threshold = 5000) {
+  const now = Date.now();
+  let resetCount = 0;
+  
+  for (const account of accounts) {
+    if (account.modelRateLimits) {
+      // Check specific model limits
+      const limit = account.modelRateLimits[modelId];
+      if (limit && limit.isRateLimited && limit.resetTime) {
+        const remaining = limit.resetTime - now;
+        // If less than threshold remaining, reset optimistically
+        if (remaining > 0 && remaining < threshold) {
+          limit.isRateLimited = false;
+          limit.resetTime = null;
+          resetCount++;
+          logger.debug(`[AccountManager] Optimistic reset for ${account.email} (${remaining}ms remaining)`);
+        }
+      }
+    }
+  }
+  
+  return resetCount;
+}
+
+/**
  * Clear all rate limits to force a fresh check (optimistic retry strategy)
  *
  * @param {Array} accounts - Array of account objects

@@ -15,13 +15,13 @@ import {
 } from "../constants.js";
 import { config } from "../config.js";
 import { convertGoogleToAnthropic } from "../format/index.js";
-import { isRateLimitError, isAuthError } from "../errors.js";
+import { RateLimitError, isRateLimitError, isAuthError } from "../errors.js";
 import { formatDuration, sleep, isNetworkError } from "../utils/helpers.js";
 import { logger } from "../utils/logger.js";
 import { parseResetTime } from "./rate-limit-parser.js";
 import { buildCloudCodeRequest, buildHeaders } from "./request-builder.js";
 import { parseThinkingSSEResponse } from "./sse-parser.js";
-import { getFallbackModel } from "../fallback-config.js";
+import { getFallbackChain } from "../fallback-config.js";
 import { deriveSessionId } from "./session-manager.js";
 import usageStats from "../modules/usage-stats.js";
 
@@ -56,6 +56,10 @@ export async function sendMessage(
   );
 
   for (let attempt = 0; attempt < maxAttempts; attempt++) {
+    // Track retries
+    if (attempt > 0) {
+      usageStats.trackRetry();
+    }
     // Use sticky account selection for cache continuity
     const { account: stickyAccount, waitMs } = accountManager.pickStickyAccount(
       model,
@@ -79,27 +83,42 @@ export async function sendMessage(
         const allWaitMs = accountManager.getMinWaitTimeMs(model);
         const resetTime = new Date(Date.now() + allWaitMs).toISOString();
 
-        // If wait time is too long (> 2 minutes), throw error immediately
-        // BUT if we have retries left, maybe we should wait?
-        // Let's stick to the config limit for now.
-        if (allWaitMs > MAX_WAIT_BEFORE_ERROR_MS) {
-          throw new Error(
+        // Always wait unless configured max is exceeded AND infinite mode is off
+        const shouldWait = config.infiniteRetryMode || allWaitMs <= MAX_WAIT_BEFORE_ERROR_MS;
+        
+        if (!shouldWait) {
+          throw new RateLimitError(
             `RESOURCE_EXHAUSTED: Rate limited on ${model}. Quota will reset after ${formatDuration(
               allWaitMs
-            )}. Next available: ${resetTime}`
+            )}. Next available: ${resetTime}`,
+            allWaitMs
           );
         }
 
-        // Wait for reset (applies to both single and multi-account modes)
+        // Wait loop with progress logging
+        const waitCount = Math.ceil(allWaitMs / 10000); // 10s chunks
         const accountCount = accountManager.getAccountCount();
+        
         logger.warn(
           `[CloudCode] All ${accountCount} account(s) rate-limited. Waiting ${formatDuration(
             allWaitMs
           )}...`
         );
+        
+        // Track wait time
+        usageStats.trackWait(allWaitMs);
 
-        // Wait loop: break if we've waited too long total
-        await sleep(allWaitMs);
+        let waited = 0;
+        // Wait in chunks to log progress
+        while (waited < allWaitMs) {
+          const chunk = Math.min(10000, allWaitMs - waited);
+          await sleep(chunk);
+          waited += chunk;
+          
+          if (waited < allWaitMs) {
+             logger.info(`[CloudCode] Still waiting... ${formatDuration(allWaitMs - waited)} remaining`);
+          }
+        }
 
         // Add small buffer after waiting to ensure rate limits have truly expired
         await sleep(1000); // Increased buffer
@@ -119,8 +138,7 @@ export async function sendMessage(
           account = accountManager.pickNext(model);
         }
 
-        // IMPROVEMENT: If we waited and still found nothing, we should continue the loop
-        // instead of throwing "No accounts available" immediately.
+        // If we waited and still found nothing, we should continue the loop
         // We decrement attempt to not count "waiting" as a failed try against the retry limit
         if (!account) {
           attempt--;
@@ -257,6 +275,9 @@ export async function sendMessage(
               );
             }
 
+            if (attempt > 0) {
+              usageStats.trackRetrySuccess();
+            }
             return result;
           }
 
@@ -289,6 +310,9 @@ export async function sendMessage(
             );
           }
 
+          if (attempt > 0) {
+            usageStats.trackRetrySuccess();
+          }
           return result;
         } catch (endpointError) {
           if (isRateLimitError(endpointError)) {
@@ -362,15 +386,29 @@ export async function sendMessage(
     }
   }
 
-  // All retries exhausted - try fallback model if enabled
-  if (fallbackEnabled) {
-    const fallbackModel = getFallbackModel(model);
-    if (fallbackModel) {
+  // All retries exhausted - try fallback model chain
+  if (fallbackEnabled || config.autoFallback) {
+    const fallbackChain = getFallbackChain(model);
+    if (fallbackChain && fallbackChain.length > 0) {
       logger.warn(
-        `[CloudCode] All retries exhausted for ${model}. Attempting fallback to ${fallbackModel}`
+        `[CloudCode] All retries exhausted for ${model}. Attempting fallback chain: ${fallbackChain.join(
+          " -> "
+        )}`
       );
-      const fallbackRequest = { ...anthropicRequest, model: fallbackModel };
-      return await sendMessage(fallbackRequest, accountManager, false); // Disable fallback for recursive call
+      
+      for (const fallbackModel of fallbackChain) {
+        try {
+          logger.info(`[CloudCode] Trying fallback model: ${fallbackModel}`);
+          usageStats.trackFallback(model, fallbackModel);
+          const fallbackRequest = { ...anthropicRequest, model: fallbackModel };
+          // Do NOT enable fallback for these calls to avoid infinite loops, 
+          // as we manage the chain here.
+          return await sendMessage(fallbackRequest, accountManager, false);
+        } catch (err) {
+           logger.warn(`[CloudCode] Fallback ${fallbackModel} failed: ${err.message}`);
+           // Continue to next fallback in chain
+        }
+      }
     }
   }
 

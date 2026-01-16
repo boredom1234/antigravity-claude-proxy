@@ -11,12 +11,32 @@ import { MODEL_FALLBACK_MAP } from './constants.js';
 export { MODEL_FALLBACK_MAP };
 
 /**
- * Get fallback model for a given model ID
- * @param {string} model - Primary model ID
- * @returns {string|null} Fallback model ID or null if no fallback exists
+ * Get the next fallback model for a given model
+ * @param {string} modelId - The model ID that failed
+ * @returns {string|null} The model ID to try next, or null if no fallback
  */
-export function getFallbackModel(model) {
-    return MODEL_FALLBACK_MAP[model] || null;
+export function getNextFallback(modelId) {
+  return MODEL_FALLBACK_MAP[modelId] || null;
+}
+
+/**
+ * Get the full chain of fallbacks for a model
+ * @param {string} modelId - The starting model ID
+ * @returns {string[]} Array of model IDs in fallback order (excluding original)
+ */
+export function getFallbackChain(modelId) {
+  const chain = [];
+  const visited = new Set([modelId]);
+  let current = MODEL_FALLBACK_MAP[modelId];
+
+  while (current) {
+    if (visited.has(current)) break; // Prevent cycles
+    chain.push(current);
+    visited.add(current);
+    current = MODEL_FALLBACK_MAP[current];
+  }
+  
+  return chain;
 }
 
 /**

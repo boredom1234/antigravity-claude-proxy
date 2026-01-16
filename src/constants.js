@@ -141,9 +141,11 @@ export const MAX_EMPTY_RESPONSE_RETRIES = 2; // Max retries for empty API respon
 export const MAX_ACCOUNTS = config?.maxAccounts || 10; // From config or 10
 
 // Rate limit wait thresholds
-export const MAX_WAIT_BEFORE_ERROR_MS = config?.maxWaitBeforeErrorMs || 120000; // From config or 2 minutes
+export const MAX_WAIT_BEFORE_ERROR_MS = config?.maxWaitBeforeErrorMs || 600000; // From config or 10 minutes
+export const INFINITE_RETRY_MODE = config?.infiniteRetryMode || false; // Never give up
+export const WAIT_PROGRESS_INTERVAL_MS = 10000; // Send progress updates every 10s while waiting
 export const STICKY_COOLDOWN_THRESHOLD_MS = 15000; // 15 seconds - wait for sticky account if reset is within this time, even if others are available
-export const MAX_CONCURRENT_REQUESTS = config?.maxConcurrentRequests || 2; // Maximum concurrent requests per account
+export const MAX_CONCURRENT_REQUESTS = config?.maxConcurrentRequests || 5; // Maximum concurrent requests per account
 export const MIN_QUOTA_FRACTION = 0.1; // Minimum remaining quota fraction (10%) before switching accounts
 
 // Thinking model constants
@@ -229,10 +231,24 @@ export const ANTIGRAVITY_SYSTEM_INSTRUCTION = `You are Antigravity, a powerful a
 // Model fallback mapping - maps primary model to fallback when quota exhausted
 // Note: Fallbacks are unidirectional to prevent cycles
 export const MODEL_FALLBACK_MAP = {
+  // Claude 3.5 Sonnet -> Claude 3.5 Haiku -> Claude 3 Opus
+  "claude-3-5-sonnet-20241022": "claude-3-5-haiku-20241022",
+  "claude-3-5-sonnet-v2@20241022": "claude-3-5-haiku-20241022",
+  "claude-3-5-haiku-20241022": "claude-3-opus-20240229",
+  
+  // Claude 3 Opus -> Claude 3 Sonnet -> Claude 3 Haiku
+  "claude-3-opus-20240229": "claude-3-sonnet-20240229",
+  "claude-3-sonnet-20240229": "claude-3-haiku-20240307",
+
+  // Gemini 1.5 Pro -> Gemini 1.5 Flash -> Gemini 2.0 Flash (terminal - no further fallback to avoid cycle)
+  "gemini-1.5-pro-002": "gemini-1.5-flash-002",
+  "gemini-1.5-flash-002": "gemini-2.0-flash-exp",
+  // Note: gemini-2.0-flash-exp has no fallback to avoid cycle back to gemini-1.5-pro
+
+  // Legacy/Other mappings
   "gemini-3-pro-high": "claude-opus-4-5-thinking",
   "gemini-3-pro-low": "claude-sonnet-4-5",
   "gemini-3-flash": "claude-sonnet-4-5-thinking",
-  // Claude models can fallback to each other but not back to Gemini
   "claude-opus-4-5-thinking": "claude-sonnet-4-5-thinking",
   "claude-sonnet-4-5-thinking": "claude-sonnet-4-5",
 };
