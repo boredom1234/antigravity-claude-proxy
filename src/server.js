@@ -33,6 +33,7 @@ import { createErrorHandler, parseError } from "./middleware/error-handler.js";
 import { createModelsController } from "./controllers/models.controller.js";
 import { createSystemController } from "./controllers/system.controller.js";
 import { createMessagesController } from "./controllers/messages.controller.js";
+import { createOpenAIController } from "./controllers/openai.controller.js";
 import AccountManager from "./account-manager/index.js";
 import { logger } from "./utils/logger.js";
 import usageStats from "./modules/usage-stats.js";
@@ -697,6 +698,19 @@ app.post("/v1/messages/count_tokens", (req, res) => {
       },
     });
   }
+});
+
+/**
+ * OpenAI-compatible Chat Completions API
+ * POST /v1/chat/completions
+ */
+app.post("/v1/chat/completions", (req, res, next) => {
+  ensureInitialized()
+    .then(() => {
+      const openAIController = createOpenAIController({ accountManager });
+      openAIController.chatCompletions(req, res);
+    })
+    .catch(next);
 });
 
 /**

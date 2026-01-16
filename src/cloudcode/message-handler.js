@@ -80,6 +80,8 @@ export async function sendMessage(
         const resetTime = new Date(Date.now() + allWaitMs).toISOString();
 
         // If wait time is too long (> 2 minutes), throw error immediately
+        // BUT if we have retries left, maybe we should wait?
+        // Let's stick to the config limit for now.
         if (allWaitMs > MAX_WAIT_BEFORE_ERROR_MS) {
           throw new Error(
             `RESOURCE_EXHAUSTED: Rate limited on ${model}. Quota will reset after ${formatDuration(
@@ -95,11 +97,16 @@ export async function sendMessage(
             allWaitMs
           )}...`
         );
+
+        // Wait loop: break if we've waited too long total
         await sleep(allWaitMs);
 
         // Add small buffer after waiting to ensure rate limits have truly expired
-        await sleep(500);
+        await sleep(1000); // Increased buffer
+
         accountManager.clearExpiredLimits();
+
+        // Try to pick an account again
         account = accountManager.pickNext(model);
 
         // If still no account after waiting, try optimistic reset
@@ -111,25 +118,22 @@ export async function sendMessage(
           accountManager.resetAllRateLimits();
           account = accountManager.pickNext(model);
         }
-      }
 
-      if (!account) {
-        // Check if fallback is enabled and available
-        if (fallbackEnabled) {
-          const fallbackModel = getFallbackModel(model);
-          if (fallbackModel) {
-            logger.warn(
-              `[CloudCode] All accounts exhausted for ${model}. Attempting fallback to ${fallbackModel}`
-            );
-            // Retry with fallback model
-            const fallbackRequest = {
-              ...anthropicRequest,
-              model: fallbackModel,
-            };
-            return await sendMessage(fallbackRequest, accountManager, false); // Disable fallback for recursive call
-          }
+        // IMPROVEMENT: If we waited and still found nothing, we should continue the loop
+        // instead of throwing "No accounts available" immediately.
+        // We decrement attempt to not count "waiting" as a failed try against the retry limit
+        if (!account) {
+          attempt--;
+          await sleep(1000); // Prevent tight loop
+          continue;
         }
-        throw new Error("No accounts available");
+      } else {
+        // Not all rate limited, but pickNext returned null?
+        // This implies we have accounts but they are busy (concurrency) or invalid.
+        // Wait a bit and retry.
+        await sleep(2000);
+        attempt--;
+        continue;
       }
     }
 

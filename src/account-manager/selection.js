@@ -30,33 +30,50 @@ function isAccountUsable(account, modelId) {
   if (!account) return false;
 
   if (account.isInvalid) {
-      logger.debug(`[AccountManager] Account ${account.email} unusable: Invalid state`);
-      return false;
+    logger.debug(
+      `[AccountManager] Account ${account.email} unusable: Invalid state`
+    );
+    return false;
   }
 
   // WebUI: Skip disabled accounts
   if (account.enabled === false) {
-      logger.debug(`[AccountManager] Account ${account.email} unusable: Disabled`);
-      return false;
+    logger.debug(
+      `[AccountManager] Account ${account.email} unusable: Disabled`
+    );
+    return false;
   }
 
   // Check concurrency limit
   if ((account.activeRequests || 0) >= MAX_CONCURRENT_REQUESTS) {
-      logger.debug(`[AccountManager] Account ${account.email} unusable: Concurrency limit (${account.activeRequests}/${MAX_CONCURRENT_REQUESTS})`);
-      return false;
+    logger.debug(
+      `[AccountManager] Account ${account.email} unusable: Concurrency limit (${account.activeRequests}/${MAX_CONCURRENT_REQUESTS})`
+    );
+    return false;
   }
 
   // Check quota limit (only for Antigravity mode)
-  if (config.geminiHeaderMode === 'antigravity' && modelId && account.quota?.models?.[modelId]) {
+  if (
+    config.geminiHeaderMode === "antigravity" &&
+    modelId &&
+    account.quota?.models?.[modelId]
+  ) {
     const quota = account.quota.models[modelId];
-    if (typeof quota.remainingFraction === 'number' && quota.remainingFraction < MIN_QUOTA_FRACTION) {
+    if (
+      typeof quota.remainingFraction === "number" &&
+      quota.remainingFraction < MIN_QUOTA_FRACTION
+    ) {
       // If reset time has passed, we ignore the low quota and let it try (and potentially fail/refresh)
       const now = Date.now();
-      const resetTimeMs = quota.resetTime ? new Date(quota.resetTime).getTime() : null;
+      const resetTimeMs = quota.resetTime
+        ? new Date(quota.resetTime).getTime()
+        : null;
 
       if (!resetTimeMs || resetTimeMs > now) {
         logger.debug(
-          `[AccountManager] Account ${account.email} unusable: Low quota for ${modelId} (${(
+          `[AccountManager] Account ${
+            account.email
+          } unusable: Low quota for ${modelId} (${(
             quota.remainingFraction * 100
           ).toFixed(1)}% < ${MIN_QUOTA_FRACTION * 100}%)`
         );
@@ -68,7 +85,13 @@ function isAccountUsable(account, modelId) {
   if (modelId && account.modelRateLimits && account.modelRateLimits[modelId]) {
     const limit = account.modelRateLimits[modelId];
     if (limit.isRateLimited && limit.resetTime > Date.now()) {
-      logger.debug(`[AccountManager] Account ${account.email} unusable: Rate limited on ${modelId} until ${new Date(limit.resetTime).toISOString()}`);
+      logger.debug(
+        `[AccountManager] Account ${
+          account.email
+        } unusable: Rate limited on ${modelId} until ${new Date(
+          limit.resetTime
+        ).toISOString()}`
+      );
       return false;
     }
   }
@@ -200,7 +223,9 @@ export function shouldWaitForCurrentAccount(
   }
 
   // If wait time is within threshold, recommend waiting
-  if (waitMs > 0 && waitMs <= MAX_WAIT_BEFORE_ERROR_MS) {
+  // Use a smaller threshold (5s) for sticky accounts to prefer switching if wait is too long
+  // But if NO other accounts are available, we'll end up waiting anyway via the global check
+  if (waitMs > 0 && waitMs <= 5000) {
     return { shouldWait: true, waitMs, account };
   }
 
