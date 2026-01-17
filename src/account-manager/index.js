@@ -158,8 +158,8 @@ export class AccountManager {
    * @param {string} [modelId] - Optional model ID
    * @returns {boolean} True if all accounts are rate-limited
    */
-  isAllRateLimited(modelId = null) {
-    return checkAllRateLimited(this.#accounts, modelId);
+  isAllRateLimited(modelId = null, quotaType = null) {
+    return checkAllRateLimited(this.#accounts, modelId, quotaType);
   }
 
   /**
@@ -167,8 +167,8 @@ export class AccountManager {
    * @param {string} [modelId] - Optional model ID
    * @returns {Array<Object>} Array of available account objects
    */
-  getAvailableAccounts(modelId = null) {
-    return getAvailable(this.#accounts, modelId);
+  getAvailableAccounts(modelId = null, quotaType = null) {
+    return getAvailable(this.#accounts, modelId, quotaType);
   }
 
   /**
@@ -215,12 +215,13 @@ export class AccountManager {
    * @param {string} [modelId] - Optional model ID
    * @returns {Object|null} The next available account or null if none available
    */
-  pickNext(modelId = null) {
+  pickNext(modelId = null, quotaType = null) {
     const { account, newIndex } = selectNext(
       this.#accounts,
       this.#currentIndex,
       () => this.saveToDisk(),
-      modelId
+      modelId,
+      quotaType
     );
     this.#currentIndex = newIndex;
     return account;
@@ -232,12 +233,13 @@ export class AccountManager {
    * @param {string} [modelId] - Optional model ID
    * @returns {Object|null} The current account or null if unavailable/rate-limited
    */
-  getCurrentStickyAccount(modelId = null) {
+  getCurrentStickyAccount(modelId = null, quotaType = null) {
     const { account, newIndex } = getSticky(
       this.#accounts,
       this.#currentIndex,
       () => this.saveToDisk(),
-      modelId
+      modelId,
+      quotaType
     );
     this.#currentIndex = newIndex;
     return account;
@@ -249,8 +251,8 @@ export class AccountManager {
    * @param {string} [modelId] - Optional model ID
    * @returns {{shouldWait: boolean, waitMs: number, account: Object|null}}
    */
-  shouldWaitForCurrentAccount(modelId = null) {
-    return shouldWait(this.#accounts, this.#currentIndex, modelId);
+  shouldWaitForCurrentAccount(modelId = null, quotaType = null) {
+    return shouldWait(this.#accounts, this.#currentIndex, modelId, quotaType);
   }
 
   /**
@@ -263,7 +265,7 @@ export class AccountManager {
    * @param {string} [sessionId] - Optional session ID
    * @returns {{account: Object|null, waitMs: number}} Account to use and optional wait time
    */
-  pickStickyAccount(modelId = null, sessionId = null) {
+  pickStickyAccount(modelId = null, sessionId = null, quotaType = null) {
     // Manage session map LRU (Least Recently Used) behavior
     // If sessionId is provided and exists, move it to the end (mark as recently used)
     if (sessionId && this.#sessionMap.has(sessionId)) {
@@ -289,7 +291,8 @@ export class AccountManager {
       () => this.saveToDisk(),
       modelId,
       sessionId,
-      this.#sessionMap
+      this.#sessionMap,
+      quotaType
     );
 
     this.#currentIndex = newIndex;
@@ -302,8 +305,8 @@ export class AccountManager {
    * @param {number|null} resetMs - Time in ms until rate limit resets (optional)
    * @param {string} [modelId] - Optional model ID to mark specific limit
    */
-  markRateLimited(email, resetMs = null, modelId = null) {
-    markLimited(this.#accounts, email, resetMs, this.#settings, modelId);
+  markRateLimited(email, resetMs = null, modelId = null, quotaType = null) {
+    markLimited(this.#accounts, email, resetMs, this.#settings, modelId, quotaType);
     this.saveToDisk();
   }
 
@@ -322,8 +325,8 @@ export class AccountManager {
    * @param {string} [modelId] - Optional model ID
    * @returns {number} Wait time in milliseconds
    */
-  getMinWaitTimeMs(modelId = null) {
-    return getMinWait(this.#accounts, modelId);
+  getMinWaitTimeMs(modelId = null, quotaType = null) {
+    return getMinWait(this.#accounts, modelId, quotaType);
   }
 
   /**

@@ -47,6 +47,20 @@ export async function sendMessage(
   const isThinking = isThinkingModel(model);
   const sessionId = deriveSessionId(anthropicRequest);
 
+  // Determine quota type based on header mode (CLI vs default)
+  // We only use 'cli' quota type for Gemini models in CLI mode
+  const modelFamily = getModelFamily(model);
+  const quotaType =
+    modelFamily === "gemini" && config.geminiHeaderMode === "cli"
+      ? "cli"
+      : null;
+
+  logger.debug(
+    `[CloudCode] Usage strategy: ${
+      quotaType ? "CLI Quota (Isolated)" : "Standard Quota (Shared)"
+    }`
+  );
+
   // Retry loop with account failover
   // Ensure we try at least as many times as there are accounts to cycle through everyone
   // +1 to ensure we hit the "all accounts rate-limited" check at the start of the next loop
@@ -63,7 +77,8 @@ export async function sendMessage(
     // Use sticky account selection for cache continuity
     const { account: stickyAccount, waitMs } = accountManager.pickStickyAccount(
       model,
-      sessionId
+      sessionId,
+      quotaType
     );
     let account = stickyAccount;
 
@@ -74,13 +89,13 @@ export async function sendMessage(
       );
       await sleep(waitMs);
       accountManager.clearExpiredLimits();
-      account = accountManager.getCurrentStickyAccount(model);
+      account = accountManager.getCurrentStickyAccount(model, quotaType);
     }
 
     // Handle all accounts rate-limited
     if (!account) {
-      if (accountManager.isAllRateLimited(model)) {
-        const allWaitMs = accountManager.getMinWaitTimeMs(model);
+      if (accountManager.isAllRateLimited(model, quotaType)) {
+        const allWaitMs = accountManager.getMinWaitTimeMs(model, quotaType);
         const resetTime = new Date(Date.now() + allWaitMs).toISOString();
 
         // Always wait unless configured max is exceeded AND infinite mode is off
@@ -126,7 +141,7 @@ export async function sendMessage(
         accountManager.clearExpiredLimits();
 
         // Try to pick an account again
-        account = accountManager.pickNext(model);
+        account = accountManager.pickNext(model, quotaType);
 
         // If still no account after waiting, try optimistic reset
         // This handles cases where the API rate limit is transient
@@ -134,8 +149,8 @@ export async function sendMessage(
           logger.warn(
             "[CloudCode] No account available after wait, attempting optimistic reset..."
           );
-          accountManager.resetAllRateLimits();
-          account = accountManager.pickNext(model);
+          accountManager.resetAllRateLimits(); // Reset all is still generic (clears all keys)
+          account = accountManager.pickNext(model, quotaType);
         }
 
         // If we waited and still found nothing, we should continue the loop
@@ -176,7 +191,7 @@ export async function sendMessage(
       logger.debug(`[CloudCode] Sending request for model: ${model}`);
 
       // Get endpoints in correct order based on model family and header mode
-      const modelFamily = getModelFamily(model);
+      // Note: modelFamily is already defined above
       const headerMode =
         modelFamily === "gemini" ? config.geminiHeaderMode : "antigravity";
       const endpoints = getEndpointsForHeaderMode(headerMode);
@@ -336,7 +351,8 @@ export async function sendMessage(
           accountManager.markRateLimited(
             account.email,
             lastError.resetMs,
-            model
+            model,
+            quotaType
           );
           throw new Error(`Rate limited: ${lastError.errorText}`);
         }
@@ -367,7 +383,7 @@ export async function sendMessage(
         logger.warn(
           `[CloudCode] Account ${account.email} failed with 5xx error, trying next...`
         );
-        accountManager.pickNext(model); // Force advance to next account
+        accountManager.pickNext(model, quotaType); // Force advance to next account
         continue;
       }
 
@@ -376,7 +392,7 @@ export async function sendMessage(
           `[CloudCode] Network error for ${account.email}, trying next account... (${error.message})`
         );
         await sleep(1000); // Brief pause before retry
-        accountManager.pickNext(model); // Advance to next account
+        accountManager.pickNext(model, quotaType); // Advance to next account
         continue;
       }
 

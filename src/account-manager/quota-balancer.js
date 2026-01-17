@@ -14,14 +14,10 @@ import { MIN_QUOTA_FRACTION } from "../constants.js";
  * @param {string} modelId - Model ID to check
  * @returns {boolean} True if rate-limited
  */
-function isAccountRateLimited(account, modelId) {
-    if (!account || !modelId) return false;
-    if (account.isInvalid) return true;
-    if (account.enabled === false) return true;
-    
-    const limit = account.modelRateLimits?.[modelId];
-    return limit && limit.isRateLimited && limit.resetTime > Date.now();
-}
+import { isAccountRateLimited } from "./rate-limits.js";
+
+// Re-using the imported helper instead of local definition
+
 
 /**
  * Check if we should break stickiness for a model
@@ -32,7 +28,7 @@ function isAccountRateLimited(account, modelId) {
  * @param {string} modelId - The model being requested
  * @returns {boolean} True if we should switch accounts
  */
-export function shouldBreakStickiness(currentAccount, allAccounts, modelId) {
+export function shouldBreakStickiness(currentAccount, allAccounts, modelId, quotaType = null) {
     if (!currentAccount || !currentAccount.quota) return false;
     
     const currentQuota = currentAccount.quota.models?.[modelId];
@@ -44,7 +40,7 @@ export function shouldBreakStickiness(currentAccount, allAccounts, modelId) {
     if (currentQuota.remainingFraction !== null && currentQuota.remainingFraction < MIN_QUOTA_FRACTION) {
         // Check if there's another account with significantly more quota (e.g. > 50%)
         const betterAccount = allAccounts.find(acc => {
-            if (isAccountRateLimited(acc, modelId)) return false;
+            if (isAccountRateLimited(acc, modelId, quotaType)) return false;
             if (acc.email === currentAccount.email) return false; // Skip self
             
             const quota = acc.quota?.models?.[modelId];
@@ -67,7 +63,7 @@ export function shouldBreakStickiness(currentAccount, allAccounts, modelId) {
  * @param {string} modelId - The model being requested
  * @returns {Object|null} The account with the most quota, or null
  */
-export function findBestQuotaAccount(accounts, modelId) {
+export function findBestQuotaAccount(accounts, modelId, quotaType = null) {
     if (!accounts || accounts.length === 0) return null;
     
     let bestAccount = null;
@@ -75,7 +71,7 @@ export function findBestQuotaAccount(accounts, modelId) {
     
     for (const acc of accounts) {
         // Skip rate-limited or invalid accounts
-        if (isAccountRateLimited(acc, modelId)) continue;
+        if (isAccountRateLimited(acc, modelId, quotaType)) continue;
         
         const quota = acc.quota?.models?.[modelId];
         // If we don't have quota info, treat as 50% for selection purposes

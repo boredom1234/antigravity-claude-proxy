@@ -28,6 +28,24 @@ function buildQuotaKey(modelId, quotaType = null) {
 }
 
 /**
+ * Check if a single account is rate-limited for a specific model and quota type
+ * 
+ * @param {Object} account - Account object
+ * @param {string} modelId - Model ID
+ * @param {string} [quotaType] - Optional quota type
+ * @returns {boolean} True if rate limited
+ */
+export function isAccountRateLimited(account, modelId, quotaType = null) {
+  if (!account) return false;
+  if (!account.enabled || account.isInvalid) return true;
+
+  const key = buildQuotaKey(modelId, quotaType);
+  const limit = account.modelRateLimits && account.modelRateLimits[key];
+  
+  return !!(limit && limit.isRateLimited && limit.resetTime > Date.now());
+}
+
+/**
  * Check if all accounts are rate-limited for a specific model and quota type
  *
  * @param {Array} accounts - Array of account objects
@@ -43,10 +61,8 @@ export function isAllRateLimited(accounts, modelId, quotaType = null) {
     if (!acc.enabled || acc.isInvalid) return true;
 
     // Check rate limits
-    const key = quotaType ? `${modelId}:${quotaType}` : modelId;
-    const limit = acc.modelRateLimits && acc.modelRateLimits[key];
-    const isRateLimited =
-      limit && limit.isRateLimited && limit.resetTime > Date.now();
+    // Check rate limits
+    const isRateLimited = isAccountRateLimited(acc, modelId, quotaType);
 
     // Check concurrent requests limit
     const activeReqs = acc.activeRequests || 0;

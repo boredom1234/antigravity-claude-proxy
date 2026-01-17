@@ -1,0 +1,28 @@
+{
+  "accounts": [
+    {
+      "email": "test@example.com",
+      "enabled": true,
+      "dbPath": null,
+      "isInvalid": false,
+      "invalidReason": null,
+      "modelRateLimits": {
+        "gemini-flash:cli": {
+          "isRateLimited": true,
+          "resetTime": 1768555807283
+        }
+      },
+      "lastUsed": null,
+      "subscription": {
+        "tier": "unknown",
+        "projectId": null,
+        "detectedAt": null
+      },
+      "quota": {
+        "models": {}
+      }
+    }
+  ],
+  "settings": {},
+  "activeIndex": 0
+}

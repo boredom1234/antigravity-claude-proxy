@@ -18,16 +18,17 @@ import {
 import { config } from "../config.js";
 import { formatDuration } from "../utils/helpers.js";
 import { logger } from "../utils/logger.js";
-import { clearExpiredLimits, getAvailableAccounts } from "./rate-limits.js";
+import { clearExpiredLimits, getAvailableAccounts, isAccountRateLimited } from "./rate-limits.js";
 import { shouldBreakStickiness, findBestQuotaAccount } from "./quota-balancer.js";
 
 /**
  * Check if an account is usable for a specific model
  * @param {Object} account - Account object
  * @param {string} modelId - Model ID to check
+ * @param {string} [quotaType] - Optional quota type
  * @returns {boolean} True if account is usable
  */
-function isAccountUsable(account, modelId) {
+function isAccountUsable(account, modelId, quotaType = null) {
   if (!account) return false;
 
   if (account.isInvalid) {
@@ -83,15 +84,14 @@ function isAccountUsable(account, modelId) {
     }
   }
 
-  if (modelId && account.modelRateLimits && account.modelRateLimits[modelId]) {
-    const limit = account.modelRateLimits[modelId];
-    if (limit.isRateLimited && limit.resetTime > Date.now()) {
+  if (modelId) {
+    if (isAccountRateLimited(account, modelId, quotaType)) {
+      // Note: isAccountRateLimited already checks expiry, but we log strictly here for debug
+      // We need to re-fetch the limit object just for logging reset time if we want detailed logs
+      // But standard logging suggests avoiding redundant lookups. 
+      // Let's assume isAccountRateLimited returned true accurately.
       logger.debug(
-        `[AccountManager] Account ${
-          account.email
-        } unusable: Rate limited on ${modelId} until ${new Date(
-          limit.resetTime
-        ).toISOString()}`
+        `[AccountManager] Account ${account.email} unusable: Rate limited on ${modelId} [${quotaType || 'default'}]`
       );
       return false;
     }
@@ -107,12 +107,13 @@ function isAccountUsable(account, modelId) {
  * @param {number} currentIndex - Current account index
  * @param {Function} onSave - Callback to save changes
  * @param {string} [modelId] - Model ID to check rate limits for
+ * @param {string} [quotaType] - Optional quota type
  * @returns {{account: Object|null, newIndex: number}} The next available account and new index
  */
-export function pickNext(accounts, currentIndex, onSave, modelId = null) {
+export function pickNext(accounts, currentIndex, onSave, modelId = null, quotaType = null) {
   clearExpiredLimits(accounts);
 
-  const available = getAvailableAccounts(accounts, modelId);
+  const available = getAvailableAccounts(accounts, modelId, quotaType);
   if (available.length === 0) {
     return { account: null, newIndex: currentIndex };
   }
@@ -128,7 +129,7 @@ export function pickNext(accounts, currentIndex, onSave, modelId = null) {
     const idx = (index + i) % accounts.length;
     const account = accounts[idx];
 
-    if (isAccountUsable(account, modelId)) {
+    if (isAccountUsable(account, modelId, quotaType)) {
       account.lastUsed = Date.now();
 
       // Note: "Using account" is logged by message-handler/streaming-handler with request ID
@@ -150,13 +151,15 @@ export function pickNext(accounts, currentIndex, onSave, modelId = null) {
  * @param {number} currentIndex - Current account index
  * @param {Function} onSave - Callback to save changes
  * @param {string} [modelId] - Model ID to check rate limits for
+ * @param {string} [quotaType] - Optional quota type
  * @returns {{account: Object|null, newIndex: number}} The current account and index
  */
 export function getCurrentStickyAccount(
   accounts,
   currentIndex,
   onSave,
-  modelId = null
+  modelId = null,
+  quotaType = null
 ) {
   clearExpiredLimits(accounts);
 
@@ -173,7 +176,7 @@ export function getCurrentStickyAccount(
   // Get current account directly (activeIndex = current account)
   const account = accounts[index];
 
-  if (isAccountUsable(account, modelId)) {
+  if (isAccountUsable(account, modelId, quotaType)) {
     account.lastUsed = Date.now();
     // Trigger save (don't await to avoid blocking)
     if (onSave) onSave();
@@ -189,12 +192,14 @@ export function getCurrentStickyAccount(
  * @param {Array} accounts - Array of account objects
  * @param {number} currentIndex - Current account index
  * @param {string} [modelId] - Model ID to check rate limits for
+ * @param {string} [quotaType] - Optional quota type
  * @returns {{shouldWait: boolean, waitMs: number, account: Object|null}}
  */
 export function shouldWaitForCurrentAccount(
   accounts,
   currentIndex,
-  modelId = null
+  modelId = null,
+  quotaType = null
 ) {
   if (accounts.length === 0) {
     return { shouldWait: false, waitMs: 0, account: null };
@@ -216,11 +221,15 @@ export function shouldWaitForCurrentAccount(
   let waitMs = 0;
 
   // Check model-specific limit
-  if (modelId && account.modelRateLimits && account.modelRateLimits[modelId]) {
-    const limit = account.modelRateLimits[modelId];
-    if (limit.isRateLimited && limit.resetTime) {
-      waitMs = limit.resetTime - Date.now();
-    }
+  if (modelId) {
+     if (isAccountRateLimited(account, modelId, quotaType)) {
+       // Re-calculate basic wait time
+       const key = quotaType ? `${modelId}:${quotaType}` : modelId;
+       const limit = account.modelRateLimits && account.modelRateLimits[key];
+       if (limit && limit.resetTime) {
+         waitMs = limit.resetTime - Date.now();
+       }
+     }
   }
 
   // If wait time is within threshold, recommend waiting
@@ -243,6 +252,7 @@ export function shouldWaitForCurrentAccount(
  * @param {string} [modelId] - Model ID to check rate limits for
  * @param {string} [sessionId] - Current session ID
  * @param {Map} [sessionMap] - Map of sessionId -> accountEmail
+ * @param {string} [quotaType] - Optional quota type
  * @returns {{account: Object|null, waitMs: number, newIndex: number}}
  */
 export function pickStickyAccount(
@@ -251,7 +261,8 @@ export function pickStickyAccount(
   onSave,
   modelId = null,
   sessionId = null,
-  sessionMap = null
+  sessionMap = null,
+  quotaType = null
 ) {
   let stickyAccount = null;
   let stickyIndex = -1;
@@ -264,11 +275,11 @@ export function pickStickyAccount(
     if (index !== -1) {
       const account = accounts[index];
       // Check if it's usable
-      if (isAccountUsable(account, modelId)) {
+      if (isAccountUsable(account, modelId, quotaType)) {
         stickyAccount = account;
         stickyIndex = index;
         // Check if we should break stickiness due to low quota
-        if (stickyAccount && shouldBreakStickiness(stickyAccount, accounts, modelId)) {
+        if (stickyAccount && shouldBreakStickiness(stickyAccount, accounts, modelId, quotaType)) {
           logger.info(`[AccountManager] Breaking stickiness for ${email} due to low quota/imbalance.`);
           stickyAccount = null;
           // Don't delete from map yet, we'll overwrite it if we find a new one
@@ -276,7 +287,6 @@ export function pickStickyAccount(
       } else {
         // Mapped account is unusable (rate limited/invalid)
         // We must switch.
-        // Detailed reason is logged by isAccountUsable
         logger.info(
           `[AccountManager] Sticky account ${email} is currently unusable. Falling back to pool.`
         );
@@ -295,7 +305,7 @@ export function pickStickyAccount(
   // This balances load for new sessions or when sticky account fails
   
   // Try to find account with best quota first
-  let nextAccount = findBestQuotaAccount(accounts, modelId);
+  let nextAccount = findBestQuotaAccount(accounts, modelId, quotaType);
   let newIndex = currentIndex;
   
   // If no "best" found (or all equal), fall back to round robin
@@ -304,7 +314,8 @@ export function pickStickyAccount(
         accounts,
         currentIndex,
         onSave,
-        modelId
+        modelId,
+        quotaType
       );
       nextAccount = result.account;
       newIndex = result.newIndex;
@@ -334,8 +345,8 @@ export function pickStickyAccount(
     const email = sessionMap.get(sessionId);
     const index = accounts.findIndex((a) => a.email === email);
     if (index !== -1) {
-      const account = accounts[index];
-      const waitInfo = shouldWaitForCurrentAccount(accounts, index, modelId);
+      // shouldWaitForCurrentAccount supports global wait
+      const waitInfo = shouldWaitForCurrentAccount(accounts, index, modelId, quotaType);
       if (waitInfo.shouldWait) {
         return {
           account: null,
@@ -347,6 +358,6 @@ export function pickStickyAccount(
   }
 
   // Last resort: check global current index wait time
-  const waitInfo = shouldWaitForCurrentAccount(accounts, currentIndex, modelId);
+  const waitInfo = shouldWaitForCurrentAccount(accounts, currentIndex, modelId, quotaType);
   return { account: null, waitMs: waitInfo.waitMs, newIndex: currentIndex };
 }

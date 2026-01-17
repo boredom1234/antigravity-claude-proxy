@@ -51,6 +51,19 @@ export async function* sendMessageStream(
   const model = anthropicRequest.model;
   const sessionId = deriveSessionId(anthropicRequest);
 
+  // Determine quota type based on header mode
+  const modelFamily = getModelFamily(model);
+  const quotaType =
+    modelFamily === "gemini" && config.geminiHeaderMode === "cli"
+      ? "cli"
+      : null;
+
+  logger.debug(
+    `[CloudCode] Usage strategy: ${
+      quotaType ? "CLI Quota (Isolated)" : "Standard Quota (Shared)"
+    }`
+  );
+
   // Retry loop with account failover
   // Ensure we try at least as many times as there are accounts to cycle through everyone
   // +1 to ensure we hit the "all accounts rate-limited" check at the start of the next loop
@@ -67,7 +80,8 @@ export async function* sendMessageStream(
     // Use sticky account selection for cache continuity
     const { account: stickyAccount, waitMs } = accountManager.pickStickyAccount(
       model,
-      sessionId
+      sessionId,
+      quotaType
     );
     let account = stickyAccount;
 
@@ -78,13 +92,13 @@ export async function* sendMessageStream(
       );
       await sleep(waitMs);
       accountManager.clearExpiredLimits();
-      account = accountManager.getCurrentStickyAccount(model);
+      account = accountManager.getCurrentStickyAccount(model, quotaType);
     }
 
     // Handle all accounts rate-limited
     if (!account) {
-      if (accountManager.isAllRateLimited(model)) {
-        const allWaitMs = accountManager.getMinWaitTimeMs(model);
+      if (accountManager.isAllRateLimited(model, quotaType)) {
+        const allWaitMs = accountManager.getMinWaitTimeMs(model, quotaType);
         const resetTime = new Date(Date.now() + allWaitMs).toISOString();
 
         // Always wait unless configured max is exceeded AND infinite mode is off
@@ -117,7 +131,7 @@ export async function* sendMessageStream(
         // Add small buffer after waiting to ensure rate limits have truly expired
         await sleep(500);
         accountManager.clearExpiredLimits();
-        account = accountManager.pickNext(model);
+        account = accountManager.pickNext(model, quotaType);
 
         // If still no account after waiting, try optimistic reset
         // This handles cases where the API rate limit is transient
@@ -125,8 +139,8 @@ export async function* sendMessageStream(
           logger.warn(
             "[CloudCode] No account available after wait, attempting optimistic reset..."
           );
-          accountManager.resetRateLimitsForModel(model);
-          account = accountManager.pickNext(model);
+          accountManager.resetRateLimitsForModel(model, quotaType);
+          account = accountManager.pickNext(model, quotaType);
         }
       }
 
@@ -304,7 +318,7 @@ export async function* sendMessageStream(
                     currentResponse,
                     retryErrorText
                   );
-                  accountManager.markRateLimited(account.email, resetMs, model);
+                  accountManager.markRateLimited(account.email, resetMs, model, quotaType);
                   throw new Error(
                     `429 RESOURCE_EXHAUSTED during retry: ${retryErrorText}`
                   );
@@ -372,7 +386,8 @@ export async function* sendMessageStream(
           accountManager.markRateLimited(
             account.email,
             lastError.resetMs,
-            model
+            model,
+            quotaType
           );
           throw new Error(`Rate limited: ${lastError.errorText}`);
         }
@@ -403,7 +418,7 @@ export async function* sendMessageStream(
         logger.warn(
           `[CloudCode] Account ${account.email} failed with 5xx stream error, trying next...`
         );
-        accountManager.pickNext(model); // Force advance to next account
+        accountManager.pickNext(model, quotaType); // Force advance to next account
         continue;
       }
 
@@ -412,7 +427,7 @@ export async function* sendMessageStream(
           `[CloudCode] Network error for ${account.email} (stream), trying next account... (${error.message})`
         );
         await sleep(1000); // Brief pause before retry
-        accountManager.pickNext(model); // Advance to next account
+        accountManager.pickNext(model, quotaType); // Advance to next account
         continue;
       }
 
