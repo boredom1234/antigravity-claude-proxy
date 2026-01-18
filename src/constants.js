@@ -20,12 +20,12 @@ function getAntigravityDbPath() {
     case "darwin":
       return join(
         home,
-        "Library/Application Support/Antigravity/User/globalStorage/state.vscdb"
+        "Library/Application Support/Antigravity/User/globalStorage/state.vscdb",
       );
     case "win32":
       return join(
         home,
-        "AppData/Roaming/Antigravity/User/globalStorage/state.vscdb"
+        "AppData/Roaming/Antigravity/User/globalStorage/state.vscdb",
       );
     default: // linux, freebsd, etc.
       return join(home, ".config/Antigravity/User/globalStorage/state.vscdb");
@@ -98,6 +98,9 @@ export const LOAD_CODE_ASSIST_ENDPOINTS = [
   ANTIGRAVITY_ENDPOINT_DAILY,
 ];
 
+// Endpoint order for onboardUser (same as generateContent fallbacks)
+export const ONBOARD_USER_ENDPOINTS = ANTIGRAVITY_ENDPOINT_FALLBACKS;
+
 // Hybrid headers specifically for loadCodeAssist
 // Uses google-api-nodejs-client User-Agent (required for project discovery on some accounts)
 export const LOAD_CODE_ASSIST_HEADERS = {
@@ -128,7 +131,7 @@ export const ACCOUNT_CONFIG_PATH =
 // Usage history persistence path
 export const USAGE_HISTORY_PATH = join(
   homedir(),
-  ".config/antigravity-proxy/usage-history.json"
+  ".config/antigravity-proxy/usage-history.json",
 );
 
 // Antigravity app database path (for legacy single-account token extraction)
@@ -235,7 +238,7 @@ export const MODEL_FALLBACK_MAP = {
   "claude-3-5-sonnet-20241022": "claude-3-5-haiku-20241022",
   "claude-3-5-sonnet-v2@20241022": "claude-3-5-haiku-20241022",
   "claude-3-5-haiku-20241022": "claude-3-opus-20240229",
-  
+
   // Claude 3 Opus -> Claude 3 Sonnet -> Claude 3 Haiku
   "claude-3-opus-20240229": "claude-3-sonnet-20240229",
   "claude-3-sonnet-20240229": "claude-3-haiku-20240307",
