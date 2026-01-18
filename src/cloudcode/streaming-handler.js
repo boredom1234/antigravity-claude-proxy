@@ -11,7 +11,10 @@ import {
   MAX_EMPTY_RESPONSE_RETRIES,
   MAX_WAIT_BEFORE_ERROR_MS,
   getModelFamily,
-  ANTIGRAVITY_ENDPOINT_FALLBACKS,
+  WAIT_PROGRESS_INTERVAL_MS,
+  RETRY_DELAY_MS,
+  RATE_LIMIT_BUFFER_MS,
+  NETWORK_ERROR_DELAY_MS,
 } from "../constants.js";
 import { config } from "../config.js";
 import {
@@ -46,7 +49,7 @@ import crypto from "crypto";
 export async function* sendMessageStream(
   anthropicRequest,
   accountManager,
-  fallbackEnabled = false
+  fallbackEnabled = false,
 ) {
   const model = anthropicRequest.model;
   const sessionId = deriveSessionId(anthropicRequest);
@@ -61,7 +64,7 @@ export async function* sendMessageStream(
   logger.debug(
     `[CloudCode] Usage strategy: ${
       quotaType ? "CLI Quota (Isolated)" : "Standard Quota (Shared)"
-    }`
+    }`,
   );
 
   // Retry loop with account failover
@@ -69,7 +72,7 @@ export async function* sendMessageStream(
   // +1 to ensure we hit the "all accounts rate-limited" check at the start of the next loop
   const maxAttempts = Math.max(
     MAX_RETRIES,
-    accountManager.getAccountCount() + 1
+    accountManager.getAccountCount() + 1,
   );
 
   for (let attempt = 0; attempt < maxAttempts; attempt++) {
@@ -81,14 +84,14 @@ export async function* sendMessageStream(
     const { account: stickyAccount, waitMs } = accountManager.pickStickyAccount(
       model,
       sessionId,
-      quotaType
+      quotaType,
     );
     let account = stickyAccount;
 
     // Handle waiting for sticky account
     if (!account && waitMs > 0) {
       logger.info(
-        `[CloudCode] Waiting ${formatDuration(waitMs)} for sticky account...`
+        `[CloudCode] Waiting ${formatDuration(waitMs)} for sticky account...`,
       );
       await sleep(waitMs);
       accountManager.clearExpiredLimits();
@@ -102,14 +105,15 @@ export async function* sendMessageStream(
         const resetTime = new Date(Date.now() + allWaitMs).toISOString();
 
         // Always wait unless configured max is exceeded AND infinite mode is off
-        const shouldWait = config.infiniteRetryMode || allWaitMs <= MAX_WAIT_BEFORE_ERROR_MS;
+        const shouldWait =
+          config.infiniteRetryMode || allWaitMs <= MAX_WAIT_BEFORE_ERROR_MS;
 
         if (!shouldWait) {
           throw new RateLimitError(
             `RESOURCE_EXHAUSTED: Rate limited on ${model}. Quota will reset after ${formatDuration(
-              allWaitMs
+              allWaitMs,
             )}. Next available: ${resetTime}`,
-            allWaitMs
+            allWaitMs,
           );
         }
 
@@ -117,11 +121,10 @@ export async function* sendMessageStream(
         const accountCount = accountManager.getAccountCount();
         logger.warn(
           `[CloudCode] All ${accountCount} account(s) rate-limited. Waiting ${formatDuration(
-            allWaitMs
-          )}...`
+            allWaitMs,
+          )}...`,
         );
-        
-        
+
         // Track wait time
         usageStats.trackWait(allWaitMs);
 
@@ -137,7 +140,7 @@ export async function* sendMessageStream(
         // This handles cases where the API rate limit is transient
         if (!account) {
           logger.warn(
-            "[CloudCode] No account available after wait, attempting optimistic reset..."
+            "[CloudCode] No account available after wait, attempting optimistic reset...",
           );
           accountManager.resetRateLimitsForModel(model, quotaType);
           account = accountManager.pickNext(model, quotaType);
@@ -151,24 +154,30 @@ export async function* sendMessageStream(
           if (fallbackChain && fallbackChain.length > 0) {
             logger.warn(
               `[CloudCode] All accounts exhausted for ${model}. Attempting fallback chain: ${fallbackChain.join(
-                " -> "
-              )} (streaming)`
+                " -> ",
+              )} (streaming)`,
             );
-            
+
             // Try chain
             for (const fallbackModel of fallbackChain) {
               try {
-                  // Retry with fallback model
-                  usageStats.trackFallback(model, fallbackModel);
-                  const fallbackRequest = {
-                    ...anthropicRequest,
-                    model: fallbackModel,
-                  };
-                  yield* sendMessageStream(fallbackRequest, accountManager, false); // Disable fallback for recursive call
-                  return;
+                // Retry with fallback model
+                usageStats.trackFallback(model, fallbackModel);
+                const fallbackRequest = {
+                  ...anthropicRequest,
+                  model: fallbackModel,
+                };
+                yield* sendMessageStream(
+                  fallbackRequest,
+                  accountManager,
+                  false,
+                ); // Disable fallback for recursive call
+                return;
               } catch (err) {
-                 logger.warn(`[CloudCode] Fallback ${fallbackModel} failed: ${err.message}`);
-                 // Continue to next fallback
+                logger.warn(
+                  `[CloudCode] Fallback ${fallbackModel} failed: ${err.message}`,
+                );
+                // Continue to next fallback
               }
             }
           }
@@ -186,7 +195,7 @@ export async function* sendMessageStream(
     logger.info(
       `[${requestId}] Using account: ${account.email} (${
         accountIndex + 1
-      }/${accountCount})`
+      }/${accountCount})`,
     );
 
     try {
@@ -218,7 +227,7 @@ export async function* sendMessageStream(
           if (!response.ok) {
             const errorText = await response.text();
             logger.warn(
-              `[CloudCode] Stream error at ${endpoint}: ${response.status} - ${errorText}`
+              `[CloudCode] Stream error at ${endpoint}: ${response.status} - ${errorText}`,
             );
 
             if (response.status === 401) {
@@ -231,7 +240,7 @@ export async function* sendMessageStream(
             if (response.status === 429) {
               // Rate limited on this endpoint - try next endpoint first (DAILY → PROD)
               logger.debug(
-                `[CloudCode] Stream rate limited at ${endpoint}, trying next endpoint...`
+                `[CloudCode] Stream rate limited at ${endpoint}, trying next endpoint...`,
               );
               const resetMs = parseResetTime(response, errorText);
               // Keep minimum reset time across all 429 responses
@@ -249,7 +258,7 @@ export async function* sendMessageStream(
             // If it's a 5xx error, wait a bit before trying the next endpoint
             if (response.status >= 500) {
               logger.warn(
-                `[CloudCode] ${response.status} stream error, waiting 1s before retry...`
+                `[CloudCode] ${response.status} stream error, waiting 1s before retry...`,
               );
               await sleep(1000);
             }
@@ -270,7 +279,7 @@ export async function* sendMessageStream(
               yield* streamSSEResponse(
                 currentResponse,
                 anthropicRequest.model,
-                headerMode
+                headerMode,
               );
               logger.debug("[CloudCode] Stream completed");
               if (attempt > 0) {
@@ -286,7 +295,7 @@ export async function* sendMessageStream(
               // Check if we have retries left
               if (emptyRetries >= MAX_EMPTY_RESPONSE_RETRIES) {
                 logger.error(
-                  `[CloudCode] Empty response after ${MAX_EMPTY_RESPONSE_RETRIES} retries`
+                  `[CloudCode] Empty response after ${MAX_EMPTY_RESPONSE_RETRIES} retries`,
                 );
                 yield* emitEmptyResponseFallback(anthropicRequest.model);
                 return;
@@ -297,7 +306,7 @@ export async function* sendMessageStream(
               logger.warn(
                 `[CloudCode] Empty response, retry ${
                   emptyRetries + 1
-                }/${MAX_EMPTY_RESPONSE_RETRIES} after ${backoffMs}ms...`
+                }/${MAX_EMPTY_RESPONSE_RETRIES} after ${backoffMs}ms...`,
               );
               await sleep(backoffMs);
 
@@ -316,11 +325,16 @@ export async function* sendMessageStream(
                 if (currentResponse.status === 429) {
                   const resetMs = parseResetTime(
                     currentResponse,
-                    retryErrorText
+                    retryErrorText,
                   );
-                  accountManager.markRateLimited(account.email, resetMs, model, quotaType);
+                  accountManager.markRateLimited(
+                    account.email,
+                    resetMs,
+                    model,
+                    quotaType,
+                  );
                   throw new Error(
-                    `429 RESOURCE_EXHAUSTED during retry: ${retryErrorText}`
+                    `429 RESOURCE_EXHAUSTED during retry: ${retryErrorText}`,
                   );
                 }
 
@@ -329,14 +343,14 @@ export async function* sendMessageStream(
                   accountManager.clearTokenCache(account.email);
                   accountManager.clearProjectCache(account.email);
                   throw new Error(
-                    `401 AUTH_INVALID during retry: ${retryErrorText}`
+                    `401 AUTH_INVALID during retry: ${retryErrorText}`,
                   );
                 }
 
                 // For 5xx errors, don't pass to streamer - just continue to next retry
                 if (currentResponse.status >= 500) {
                   logger.warn(
-                    `[CloudCode] Retry got ${currentResponse.status}, will retry...`
+                    `[CloudCode] Retry got ${currentResponse.status}, will retry...`,
                   );
                   // Don't continue here - let the loop increment and refetch
                   // Set currentResponse to null to force refetch at loop start
@@ -355,7 +369,7 @@ export async function* sendMessageStream(
                 }
 
                 throw new Error(
-                  `Empty response retry failed: ${currentResponse.status} - ${retryErrorText}`
+                  `Empty response retry failed: ${currentResponse.status} - ${retryErrorText}`,
                 );
               }
               // Response is OK, loop will continue to try streamSSEResponse
@@ -370,7 +384,7 @@ export async function* sendMessageStream(
           }
           logger.warn(
             `[CloudCode] Stream error at ${endpoint}:`,
-            endpointError.message
+            endpointError.message,
           );
           lastError = endpointError;
         }
@@ -381,13 +395,13 @@ export async function* sendMessageStream(
         // If all endpoints returned 429, mark account as rate-limited
         if (lastError.is429) {
           logger.warn(
-            `[CloudCode] All endpoints rate-limited for ${account.email}`
+            `[CloudCode] All endpoints rate-limited for ${account.email}`,
           );
           accountManager.markRateLimited(
             account.email,
             lastError.resetMs,
             model,
-            quotaType
+            quotaType,
           );
           throw new Error(`Rate limited: ${lastError.errorText}`);
         }
@@ -397,14 +411,14 @@ export async function* sendMessageStream(
       if (isRateLimitError(error)) {
         // Rate limited - already marked, continue to next account
         logger.info(
-          `[CloudCode] Account ${account.email} rate-limited, trying next...`
+          `[CloudCode] Account ${account.email} rate-limited, trying next...`,
         );
         continue;
       }
       if (isAuthError(error)) {
         // Auth invalid - already marked, continue to next account
         logger.warn(
-          `[CloudCode] Account ${account.email} has invalid credentials, trying next...`
+          `[CloudCode] Account ${account.email} has invalid credentials, trying next...`,
         );
         continue;
       }
@@ -416,7 +430,7 @@ export async function* sendMessageStream(
         error.message.includes("503")
       ) {
         logger.warn(
-          `[CloudCode] Account ${account.email} failed with 5xx stream error, trying next...`
+          `[CloudCode] Account ${account.email} failed with 5xx stream error, trying next...`,
         );
         accountManager.pickNext(model, quotaType); // Force advance to next account
         continue;
@@ -424,9 +438,9 @@ export async function* sendMessageStream(
 
       if (isNetworkError(error)) {
         logger.warn(
-          `[CloudCode] Network error for ${account.email} (stream), trying next account... (${error.message})`
+          `[CloudCode] Network error for ${account.email} (stream), trying next account... (${error.message})`,
         );
-        await sleep(1000); // Brief pause before retry
+        await sleep(NETWORK_ERROR_DELAY_MS); // Brief pause before retry
         accountManager.pickNext(model, quotaType); // Advance to next account
         continue;
       }
@@ -438,15 +452,15 @@ export async function* sendMessageStream(
   }
 
   // All retries exhausted - try fallback model chain
-  if (fallbackEnabled || config.autoFallback) {
+  if (fallbackEnabled) {
     const fallbackChain = getFallbackChain(model);
     if (fallbackChain && fallbackChain.length > 0) {
       logger.warn(
         `[CloudCode] All retries exhausted for ${model}. Attempting fallback chain: ${fallbackChain.join(
-          " -> "
-        )} (streaming)`
+          " -> ",
+        )} (streaming)`,
       );
-      
+
       // Try chain
       for (const fallbackModel of fallbackChain) {
         try {
@@ -455,8 +469,10 @@ export async function* sendMessageStream(
           yield* sendMessageStream(fallbackRequest, accountManager, false); // Disable fallback for recursive call
           return;
         } catch (err) {
-           logger.warn(`[CloudCode] Fallback ${fallbackModel} failed: ${err.message}`);
-           // Continue to next fallback
+          logger.warn(
+            `[CloudCode] Fallback ${fallbackModel} failed: ${err.message}`,
+          );
+          // Continue to next fallback
         }
       }
     }
@@ -529,19 +545,19 @@ async function* emitWaitProgress(model, waitMs) {
     elapsed += chunk;
 
     if (config.waitProgressUpdates && elapsed < waitMs) {
-       const remaining = waitMs - elapsed;
-       // We use a content block delta to show progress text in the client
-       // This might be risky if clients don't handle interleaved text well,
-       // but most should append it.
-       // Alternatively, we could just send comments (ping frames) if supported,
-       // but standard Anthropic protocol doesn't strictly define ping frames visible to user.
-       // The safe bet is to just log on server side, but user requested "unlimited feel".
-       // Let's send a ping event (comment) which keeps connection alive but doesn't show text.
-       // Actually, the plan suggested text_delta. Let's send a "ping" event type which is custom but safe.
-       yield {
-          type: "ping",
-          msg: `Waiting for quota... ${formatDuration(remaining)} remaining`
-       };
+      const remaining = waitMs - elapsed;
+      // We use a content block delta to show progress text in the client
+      // This might be risky if clients don't handle interleaved text well,
+      // but most should append it.
+      // Alternatively, we could just send comments (ping frames) if supported,
+      // but standard Anthropic protocol doesn't strictly define ping frames visible to user.
+      // The safe bet is to just log on server side, but user requested "unlimited feel".
+      // Let's send a ping event (comment) which keeps connection alive but doesn't show text.
+      // Actually, the plan suggested text_delta. Let's send a "ping" event type which is custom but safe.
+      yield {
+        type: "ping",
+        msg: `Waiting for quota... ${formatDuration(remaining)} remaining`,
+      };
     }
   }
 }

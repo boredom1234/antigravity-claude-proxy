@@ -12,6 +12,10 @@ import {
   isThinkingModel,
   getModelFamily,
   ANTIGRAVITY_ENDPOINT_FALLBACKS,
+  WAIT_PROGRESS_INTERVAL_MS,
+  RETRY_DELAY_MS,
+  RATE_LIMIT_BUFFER_MS,
+  NETWORK_ERROR_DELAY_MS,
 } from "../constants.js";
 import { config } from "../config.js";
 import { convertGoogleToAnthropic } from "../format/index.js";
@@ -139,7 +143,7 @@ export async function sendMessage(
         }
 
         // Add small buffer after waiting to ensure rate limits have truly expired
-        await sleep(1000); // Increased buffer
+        await sleep(RATE_LIMIT_BUFFER_MS); // Increased buffer
 
         accountManager.clearExpiredLimits();
 
@@ -409,7 +413,7 @@ export async function sendMessage(
   }
 
   // All retries exhausted - try fallback model chain
-  if (fallbackEnabled || config.autoFallback) {
+  if (fallbackEnabled) {
     const fallbackChain = getFallbackChain(model);
     if (fallbackChain && fallbackChain.length > 0) {
       logger.warn(

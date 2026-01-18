@@ -85,8 +85,8 @@ export function buildCloudCodeRequest(anthropicRequest, projectId) {
     payload.request.generationConfig = payload.request.generationConfig || {};
 
     payload.request.generationConfig.thinkingConfig = {
-      ...payload.request.generationConfig.thinkingConfig,
       includeThoughts: true,
+      ...payload.request.generationConfig.thinkingConfig,
     };
 
     if (resolved.thinkingLevel) {

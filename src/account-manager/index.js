@@ -281,6 +281,7 @@ export class AccountManager {
       let count = 0;
       for (const key of this.#sessionMap.keys()) {
         if (count++ > 200) break;
+        if (key === sessionId) continue; // Critical: Don't delete active session
         this.#sessionMap.delete(key);
       }
     }
@@ -524,7 +525,6 @@ export class AccountManager {
         isInvalid: a.isInvalid || false,
         invalidReason: a.invalidReason || null,
         lastUsed: a.lastUsed,
-        lastUsed: a.lastUsed,
         activeRequests: a.activeRequests || 0,
         disabledModels: a.disabledModels || [],
       })),
@@ -579,7 +579,6 @@ export class AccountManager {
         modelRateLimits: {},
         lastUsed: null,
         addedAt: new Date().toISOString(),
-        subscription: { tier: "unknown", projectId: null, detectedAt: null },
         subscription: { tier: "unknown", projectId: null, detectedAt: null },
         quota: { models: {}, lastChecked: null },
         disabledModels: [],

@@ -12,25 +12,43 @@ import { sendMessage, sendMessageStream } from "../cloudcode/index.js";
  * @returns {Array} Anthropic messages
  */
 function convertOpenAIMessagesToAnthropic(messages) {
-  return messages.map((msg) => {
-    // Basic text content
-    if (typeof msg.content === "string") {
-      return {
-        role: msg.role === "assistant" ? "assistant" : "user",
-        content: msg.content,
-      };
-    }
+  // Extract system messages
+  const systemMessages = messages.filter((msg) => msg.role === "system");
+  const system =
+    systemMessages.length > 0
+      ? systemMessages
+          .map((m) =>
+            typeof m.content === "string"
+              ? m.content
+              : JSON.stringify(m.content),
+          )
+          .join("\n\n")
+      : undefined;
 
-    // Array content (multimodal) - simplified for now
-    if (Array.isArray(msg.content)) {
-      return {
-        role: msg.role === "assistant" ? "assistant" : "user",
-        content: msg.content,
-      };
-    }
+  // Convert non-system messages
+  const anthropicMessages = messages
+    .filter((msg) => msg.role !== "system")
+    .map((msg) => {
+      // Basic text content
+      if (typeof msg.content === "string") {
+        return {
+          role: msg.role === "assistant" ? "assistant" : "user",
+          content: msg.content,
+        };
+      }
 
-    return msg;
-  });
+      // Array content (multimodal)
+      if (Array.isArray(msg.content)) {
+        return {
+          role: msg.role === "assistant" ? "assistant" : "user",
+          content: msg.content,
+        };
+      }
+
+      return msg;
+    });
+
+  return { messages: anthropicMessages, system };
 }
 
 /**
@@ -107,13 +125,36 @@ export const createOpenAIController = (context) => {
           });
         }
 
+        // Validate individual messages
+        for (let i = 0; i < messages.length; i++) {
+          const msg = messages[i];
+          if (!msg || typeof msg !== "object") {
+            return res.status(400).json({
+              error: {
+                message: `messages[${i}] must be an object`,
+                type: "invalid_request_error",
+              },
+            });
+          }
+          if (!msg.role) {
+            return res.status(400).json({
+              error: {
+                message: `messages[${i}].role is required`,
+                type: "invalid_request_error",
+              },
+            });
+          }
+        }
+
         // Convert messages to Anthropic format
-        const anthropicMessages = convertOpenAIMessagesToAnthropic(messages);
+        const { messages: anthropicMessages, system } =
+          convertOpenAIMessagesToAnthropic(messages);
 
         // Construct request for internal handler
         const request = {
           model: model || "claude-3-5-sonnet-20241022",
           messages: anthropicMessages,
+          system,
           max_tokens: max_tokens || 4096,
           stream: stream || false,
           temperature,
@@ -190,6 +231,7 @@ export const createOpenAIController = (context) => {
             res.write(
               `data: ${JSON.stringify({ error: { message: streamError.message, type: "api_error" } })}\n\n`,
             );
+            res.write("data: [DONE]\n\n");
             res.end();
           }
           return;

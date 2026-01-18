@@ -117,7 +117,7 @@ function validateConfig(cfg) {
       const value = Number(validated[key]);
       if (isNaN(value) || value < range.min || value > range.max) {
         warnings.push(
-          `${key} must be between ${range.min} and ${range.max}, got ${validated[key]}`
+          `${key} must be between ${range.min} and ${range.max}, got ${validated[key]}`,
         );
         validated[key] = range.default;
       } else {
@@ -128,12 +128,12 @@ function validateConfig(cfg) {
 
   // Validate boolean fields
   const booleanFields = [
-    "debug", 
-    "persistTokenCache", 
-    "infiniteRetryMode", 
-    "autoFallback", 
-    "waitProgressUpdates", 
-    "aggressiveRetry"
+    "debug",
+    "persistTokenCache",
+    "infiniteRetryMode",
+    "autoFallback",
+    "waitProgressUpdates",
+    "aggressiveRetry",
   ];
   for (const key of booleanFields) {
     if (validated[key] !== undefined && typeof validated[key] !== "boolean") {
@@ -147,7 +147,7 @@ function validateConfig(cfg) {
     warnings.push(
       `logLevel must be one of ${validLogLevels.join(", ")}, got ${
         validated.logLevel
-      }`
+      }`,
     );
     validated.logLevel = DEFAULT_CONFIG.logLevel;
   }
@@ -161,7 +161,7 @@ function validateConfig(cfg) {
     warnings.push(
       `geminiHeaderMode must be one of ${validHeaderModes.join(", ")}, got ${
         validated.geminiHeaderMode
-      }`
+      }`,
     );
     validated.geminiHeaderMode = DEFAULT_CONFIG.geminiHeaderMode;
   }
@@ -177,7 +177,7 @@ function validateConfig(cfg) {
 
   // Log warnings
   for (const warning of warnings) {
-    console.warn(`[Config] Warning: ${warning}`);
+    logger.warn(`[Config] Warning: ${warning}`);
   }
 
   return validated;
@@ -208,7 +208,7 @@ function loadConfig() {
         loadedConfig[configKey] = parseEnvValue(
           configKey,
           process.env[envName],
-          DEFAULT_CONFIG[configKey]
+          DEFAULT_CONFIG[configKey],
         );
       }
     }

@@ -51,7 +51,7 @@ export async function loadAccounts(configPath = ACCOUNT_CONFIG_PATH) {
     }
 
     logger.info(
-      `[AccountManager] Loaded ${accounts.length} account(s) from config`
+      `[AccountManager] Loaded ${accounts.length} account(s) from config`,
     );
 
     return { accounts, settings, activeIndex };
@@ -59,7 +59,7 @@ export async function loadAccounts(configPath = ACCOUNT_CONFIG_PATH) {
     if (error.code === "ENOENT") {
       // No config file - return empty
       logger.info(
-        "[AccountManager] No config file found. Using Antigravity database (single account mode)"
+        "[AccountManager] No config file found. Using Antigravity database (single account mode)",
       );
     } else {
       logger.error("[AccountManager] Failed to load config:", error.message);
@@ -99,7 +99,7 @@ export function loadDefaultAccount(dbPath) {
   } catch (error) {
     logger.error(
       "[AccountManager] Failed to load default account:",
-      error.message
+      error.message,
     );
   }
 
@@ -119,7 +119,7 @@ export async function saveAccounts(
   configPath,
   accounts,
   settings,
-  activeIndex
+  activeIndex,
 ) {
   // Ensure directory exists
   const dir = dirname(configPath);
@@ -146,6 +146,7 @@ export async function saveAccounts(
         detectedAt: null,
       },
       quota: acc.quota || { models: {}, lastChecked: null },
+      disabledModels: acc.disabledModels || [],
     })),
     settings: settings,
     activeIndex: activeIndex,

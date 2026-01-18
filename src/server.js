@@ -94,7 +94,9 @@ async function ensureInitialized(req, res, next) {
 // Parse fallback flag directly from command line args
 const args = process.argv.slice(2);
 const FALLBACK_ENABLED =
-  process.env.FALLBACK !== "false" && !args.includes("--no-fallback");
+  process.env.FALLBACK !== "false" &&
+  !args.includes("--no-fallback") &&
+  config.autoFallback !== false;
 
 const app = express();
 

@@ -1,6 +1,6 @@
 import { sendMessage, sendMessageStream } from "../cloudcode/index.js";
 import { config } from "../config.js";
-import { DEFAULT_MAX_TOKENS } from "../constants.js";
+import { DEFAULT_MAX_TOKENS, getModelFamily } from "../constants.js";
 import { logger } from "../utils/logger.js";
 import { estimateTokens } from "../utils/helpers.js";
 
@@ -34,7 +34,7 @@ export const createMessagesController = (accountManager, fallbackEnabled) => {
         ) {
           const targetModel = modelMapping[requestedModel].mapping;
           logger.info(
-            `[Server] Mapping model ${requestedModel} -> ${targetModel}`
+            `[Server] Mapping model ${requestedModel} -> ${targetModel}`,
           );
           requestedModel = targetModel;
         }
@@ -44,10 +44,15 @@ export const createMessagesController = (accountManager, fallbackEnabled) => {
         // Optimistic Retry: If ALL accounts are rate-limited for this model, reset them to force a fresh check.
         // If we have some available accounts, we try them first.
         if (accountManager.isAllRateLimited(modelId)) {
+          const modelFamily = getModelFamily(modelId);
+          const quotaType =
+            modelFamily === "gemini" && config.geminiHeaderMode === "cli"
+              ? "cli"
+              : null;
           logger.warn(
-            `[${req.requestId}] All accounts rate-limited for ${modelId}. Resetting state for optimistic retry.`
+            `[${req.requestId}] All accounts rate-limited for ${modelId} [${quotaType || "default"}]. Resetting state for optimistic retry.`,
           );
-          accountManager.resetRateLimitsForModel(modelId);
+          accountManager.resetRateLimitsForModel(modelId, quotaType);
         }
 
         // Build the request object
@@ -69,7 +74,7 @@ export const createMessagesController = (accountManager, fallbackEnabled) => {
         logger.info(
           `[${req.requestId}] Request for model: ${
             request.model
-          }, stream: ${!!stream}`
+          }, stream: ${!!stream}`,
         );
 
         // Debug: Log message structure to diagnose tool_use/tool_result ordering
@@ -79,8 +84,8 @@ export const createMessagesController = (accountManager, fallbackEnabled) => {
             const contentTypes = Array.isArray(msg.content)
               ? msg.content.map((c) => c.type || "text").join(", ")
               : typeof msg.content === "string"
-              ? "text"
-              : "unknown";
+                ? "text"
+                : "unknown";
             logger.debug(`  [${i}] ${msg.role}: ${contentTypes}`);
           });
         }
@@ -100,10 +105,10 @@ export const createMessagesController = (accountManager, fallbackEnabled) => {
             for await (const event of sendMessageStream(
               request,
               accountManager,
-              fallbackEnabled
+              fallbackEnabled,
             )) {
               res.write(
-                `event: ${event.type}\ndata: ${JSON.stringify(event)}\n\n`
+                `event: ${event.type}\ndata: ${JSON.stringify(event)}\n\n`,
               );
               // Flush after each event for real-time streaming
               if (res.flush) res.flush();
@@ -129,7 +134,7 @@ export const createMessagesController = (accountManager, fallbackEnabled) => {
           const response = await sendMessage(
             request,
             accountManager,
-            fallbackEnabled
+            fallbackEnabled,
           );
           res.json(response);
         }

@@ -9,7 +9,7 @@ const __dirname = dirname(__filename);
 
 // Read package.json for version
 const packageJson = JSON.parse(
-  readFileSync(join(__dirname, "..", "package.json"), "utf-8")
+  readFileSync(join(__dirname, "..", "package.json"), "utf-8"),
 );
 
 const args = process.argv.slice(2);
@@ -110,12 +110,20 @@ async function main() {
 
     default:
       console.error(`Unknown command: ${command}`);
-      console.error('Run "antigravity-proxy --help" for usage information.');
+      console.error(
+        'Run "antigravity-claude-proxy --help" for usage information.',
+      );
       process.exit(1);
   }
 }
 
 main().catch((err) => {
+  console.error("Error:", err.message);
+  process.exit(1);
+});
+
+// Handle errors
+process.on("uncaughtException", (err) => {
   console.error("Error:", err.message);
   process.exit(1);
 });
