@@ -92,6 +92,9 @@ export function buildCloudCodeRequest(anthropicRequest, projectId) {
     if (resolved.thinkingLevel) {
       payload.request.generationConfig.thinkingConfig.thinkingLevel =
         resolved.thinkingLevel;
+      // IMPORTANT: thinkingLevel and thinkingBudget cannot be used together
+      // Remove thinkingBudget to avoid API error: "thinking_budget and thinking_level are not supported together"
+      delete payload.request.generationConfig.thinkingConfig.thinkingBudget;
     }
   }
 
