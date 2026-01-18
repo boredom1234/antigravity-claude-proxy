@@ -127,6 +127,7 @@
           <th
             class="py-3 text-left text-[10px] font-bold text-gray-500 uppercase tracking-wider w-24"
             x-text="$store.global.t('health')"
+            title="Rate Limit Hits (Lifetime)"
           >
             Health
           </th>
@@ -306,6 +307,13 @@
                   :class="acc.status === 'ok' ? 'text-neon-green' : 'text-red-400'"
                   x-text="acc.status.toUpperCase()"
                 >
+                </span>
+                <span
+                  x-show="acc.rateLimitHitCount > 0"
+                  class="text-[9px] font-mono text-orange-400 bg-orange-500/10 px-1 rounded border border-orange-500/20"
+                  :title="'Rate limit hits: ' + acc.rateLimitHitCount + (acc.lastRateLimitedAt ? '\nLast: ' + window.utils.formatTimeAgo(acc.lastRateLimitedAt) : '')"
+                >
+                  <span x-text="acc.rateLimitHitCount"></span>
                 </span>
               </div>
             </td>

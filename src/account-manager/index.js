@@ -527,6 +527,8 @@ export class AccountManager {
         lastUsed: a.lastUsed,
         activeRequests: a.activeRequests || 0,
         disabledModels: a.disabledModels || [],
+        rateLimitHitCount: a.rateLimitHitCount || 0,
+        lastRateLimitedAt: a.lastRateLimitedAt || null,
       })),
     };
   }

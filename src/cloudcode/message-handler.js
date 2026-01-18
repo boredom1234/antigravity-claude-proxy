@@ -22,7 +22,8 @@ import { convertGoogleToAnthropic } from "../format/index.js";
 import { RateLimitError, isRateLimitError, isAuthError } from "../errors.js";
 import { formatDuration, sleep, isNetworkError } from "../utils/helpers.js";
 import { logger } from "../utils/logger.js";
-import { parseResetTime } from "./rate-limit-parser.js";
+import { parseResetTime, parseLimitType } from "./rate-limit-parser.js";
+import { resetConsecutiveFailures } from "../account-manager/rate-limits.js";
 import { buildCloudCodeRequest, buildHeaders } from "./request-builder.js";
 import { parseThinkingSSEResponse } from "./sse-parser.js";
 import { getFallbackChain } from "../fallback-config.js";
@@ -303,6 +304,9 @@ export async function sendMessage(
             if (attempt > 0) {
               usageStats.trackRetrySuccess();
             }
+            // On success, reset consecutive failures
+            resetConsecutiveFailures(account, model);
+
             return result;
           }
 
@@ -338,6 +342,9 @@ export async function sendMessage(
           if (attempt > 0) {
             usageStats.trackRetrySuccess();
           }
+          // On success, reset consecutive failures
+          resetConsecutiveFailures(account, model);
+
           return result;
         } catch (endpointError) {
           if (isRateLimitError(endpointError)) {
@@ -363,6 +370,7 @@ export async function sendMessage(
             lastError.resetMs,
             model,
             quotaType,
+            parseLimitType(lastError.errorText),
           );
           throw new Error(`Rate limited: ${lastError.errorText}`);
         }

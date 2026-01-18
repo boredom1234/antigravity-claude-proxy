@@ -519,6 +519,25 @@
                 x-text="usageStats.total"
               ></span>
             </div>
+
+            <!-- Quota Type Breakdown -->
+            <div
+              class="px-2.5 py-1 rounded bg-space-850 border border-space-border/60 whitespace-nowrap"
+              x-show="usageStats.cli > 0 || usageStats.antigravity > 0"
+            >
+              <span class="text-cyan-500" title="CLI Quota">CLI:</span>
+              <span
+                class="text-cyan-400 ml-1 font-bold"
+                x-text="usageStats.cli || 0"
+              ></span>
+              <span class="text-gray-600 mx-1">|</span>
+              <span class="text-purple-500" title="Antigravity Quota">AG:</span>
+              <span
+                class="text-purple-400 ml-1 font-bold"
+                x-text="usageStats.antigravity || 0"
+              ></span>
+            </div>
+
             <div
               class="px-2.5 py-1 rounded bg-space-850 border border-space-border/60 whitespace-nowrap"
             >

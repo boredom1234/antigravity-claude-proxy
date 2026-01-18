@@ -170,7 +170,9 @@ window.Components.dashboard = () => ({
     const tree = {};
     let total = 0,
       today = 0,
-      thisHour = 0;
+      thisHour = 0,
+      cli = 0,
+      antigravity = 0;
 
     const now = new Date();
     const todayStart = new Date(now);
@@ -190,7 +192,13 @@ window.Components.dashboard = () => ({
       // Process each family in the hour data
       Object.entries(hourData).forEach(([key, value]) => {
         // Skip metadata keys
-        if (key === "_total" || key === "total") return;
+        if (
+          key === "_total" ||
+          key === "total" ||
+          key === "_cli" ||
+          key === "_antigravity"
+        )
+          return;
 
         // Handle hierarchical format: { claude: { "opus-4-5": 10, "_subtotal": 10 } }
         if (typeof value === "object" && value !== null) {
@@ -207,6 +215,8 @@ window.Components.dashboard = () => ({
       // Calculate totals
       const hourTotal = hourData._total || hourData.total || 0;
       total += hourTotal;
+      cli += hourData._cli || 0;
+      antigravity += hourData._antigravity || 0;
 
       if (timestamp >= todayStart) {
         today += hourTotal;
@@ -216,7 +226,7 @@ window.Components.dashboard = () => ({
       }
     });
 
-    this.usageStats = { total, today, thisHour };
+    this.usageStats = { total, today, thisHour, cli, antigravity };
 
     // Convert Sets to sorted arrays
     this.modelTree = {};

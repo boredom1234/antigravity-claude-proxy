@@ -313,6 +313,7 @@ export function resetAllRateLimits(accounts) {
  * @param {number|null} resetMs - Time in ms until rate limit resets (from API)
  * @param {string} modelId - Model ID to mark rate limit for
  * @param {string} [quotaType] - Quota type ('cli' or 'antigravity')
+ * @param {string} [limitType] - Limit type ('rpm' or 'daily')
  * @returns {boolean} True if account was found and marked
  */
 export function markRateLimited(
@@ -322,21 +323,54 @@ export function markRateLimited(
   settings = {},
   modelId,
   quotaType = null,
+  limitType = "rpm",
 ) {
   const account = accounts.find((a) => a.email === email);
   if (!account) return false;
 
-  // Use configured cooldown as the maximum wait time
-  // If API returns a reset time, cap it at DEFAULT_COOLDOWN_MS
-  // If API doesn't return a reset time, use DEFAULT_COOLDOWN_MS
+  // Track health stats
+  account.rateLimitHitCount = (account.rateLimitHitCount || 0) + 1;
+  account.lastRateLimitedAt = Date.now();
+
+  // Exponential backoff logic
+  if (!account.rateLimitStats) account.rateLimitStats = {};
+  if (!account.rateLimitStats[modelId])
+    account.rateLimitStats[modelId] = { consecutiveFailures: 0 };
+
+  account.rateLimitStats[modelId].consecutiveFailures++;
+  const failures = account.rateLimitStats[modelId].consecutiveFailures;
+
+  // Calculate cooldown
   let cooldownMs;
-  if (resetMs && resetMs > 0) {
-    // API provided a reset time - cap it at configured maximum
+
+  // 1. Daily Quota: Use long cooldown (1 hour)
+  if (limitType === "daily") {
+    const DAILY_LIMIT_COOLDOWN_MS = 60 * 60 * 1000; // 1 hour
+    cooldownMs = DAILY_LIMIT_COOLDOWN_MS;
+    logger.warn(
+      `[AccountManager] Daily quota exhausted for ${email}. Cooling down for 1 hour.`,
+    );
+  }
+  // 2. Standard Reset: Use API reset time if available (capped at default)
+  else if (resetMs && resetMs > 0) {
     cooldownMs = Math.min(resetMs, DEFAULT_COOLDOWN_MS);
-  } else {
-    // No reset time from API - use configured default
+  }
+  // 3. Default: Use configured default
+  else {
     cooldownMs = DEFAULT_COOLDOWN_MS;
   }
+
+  // Apply exponential backoff multiplier (for repeated failures only)
+  // 10s -> 20s -> 40s -> 80s ... capped at 5 mins (30x of 10s)
+  // Only apply to RPM/transient errors, as daily limits have their own long wait
+  if (limitType !== "daily" && failures > 1) {
+    const backoffMultiplier = Math.min(Math.pow(2, failures - 1), 30);
+    cooldownMs = Math.max(cooldownMs, DEFAULT_COOLDOWN_MS * backoffMultiplier);
+    logger.debug(
+      `[AccountManager] Exponential backoff (${failures} failures): ${formatDuration(cooldownMs)}`,
+    );
+  }
+
   const resetTime = Date.now() + cooldownMs;
 
   if (!account.modelRateLimits) {
@@ -475,4 +509,20 @@ export function getMinWaitTimeMs(accounts, modelId, quotaType = null) {
 
   if (activeCount === 0) return 0;
   return minWait === Infinity ? DEFAULT_COOLDOWN_MS : minWait;
+}
+
+/**
+ * Reset consecutive failure count for an account/model on success
+ * @param {Object} account - Account object
+ * @param {string} modelId - Model ID
+ */
+export function resetConsecutiveFailures(account, modelId) {
+  if (account && account.rateLimitStats && account.rateLimitStats[modelId]) {
+    if (account.rateLimitStats[modelId].consecutiveFailures > 0) {
+      account.rateLimitStats[modelId].consecutiveFailures = 0;
+      logger.debug(
+        `[AccountManager] Reset consecutive failures for ${account.email} on ${modelId}`,
+      );
+    }
+  }
 }
