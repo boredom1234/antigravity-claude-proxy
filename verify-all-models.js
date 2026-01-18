@@ -1,16 +1,20 @@
 const models = [
-  "gemini-2.5-flash-lite",
-  "gemini-3-pro-low",
-  "claude-sonnet-4-5",
-  "gemini-3-pro-high",
+  // Claude models
   "claude-opus-4-5-thinking",
-  "gpt-oss-120b-medium",
-  "gemini-3-flash",
-  "gemini-3-pro-image",
-  "gemini-2.5-flash-thinking",
+  "claude-sonnet-4-5",
   "claude-sonnet-4-5-thinking",
-  "gemini-2.5-pro",
+
+  // Gemini 2.5 models
   "gemini-2.5-flash",
+  "gemini-2.5-flash-lite",
+  "gemini-2.5-flash-thinking",
+  "gemini-2.5-pro",
+
+  // Gemini 3 models
+  "gemini-3-flash",
+  "gemini-3-pro-high",
+  "gemini-3-pro-image",
+  "gemini-3-pro-low",
 ];
 
 async function testModel(modelId) {

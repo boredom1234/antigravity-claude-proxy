@@ -254,6 +254,11 @@ export const MODEL_FALLBACK_MAP = {
   "gemini-3-flash": "claude-sonnet-4-5-thinking",
   "claude-opus-4-5-thinking": "claude-sonnet-4-5-thinking",
   "claude-sonnet-4-5-thinking": "claude-sonnet-4-5",
+
+  // Gemini 2.5 fallbacks
+  "gemini-2.5-pro": "gemini-2.5-flash",
+  "gemini-2.5-flash": "gemini-2.5-flash-lite",
+  "gemini-2.5-flash-thinking": "gemini-2.5-flash",
 };
 
 // Validation Constants

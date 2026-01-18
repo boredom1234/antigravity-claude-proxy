@@ -1,11 +1,11 @@
 async function testOpenAIEndpoint() {
   const url = "http://localhost:8672/v1/chat/completions";
   const body = {
-    model: "claude-sonnet-4-5-thinking",
+    model: "gemini-2.5-flash-thinking",
     messages: [
       {
         role: "user",
-        content: "Hello, verify this endpoint works.",
+        content: "Explain quantum entanglement briefly.",
       },
     ],
     stream: false,

@@ -41,7 +41,7 @@ import usageStats from "../modules/usage-stats.js";
 export async function sendMessage(
   anthropicRequest,
   accountManager,
-  fallbackEnabled = false
+  fallbackEnabled = false,
 ) {
   const model = anthropicRequest.model;
   const isThinking = isThinkingModel(model);
@@ -58,7 +58,7 @@ export async function sendMessage(
   logger.debug(
     `[CloudCode] Usage strategy: ${
       quotaType ? "CLI Quota (Isolated)" : "Standard Quota (Shared)"
-    }`
+    }`,
   );
 
   // Retry loop with account failover
@@ -66,7 +66,7 @@ export async function sendMessage(
   // +1 to ensure we hit the "all accounts rate-limited" check at the start of the next loop
   const maxAttempts = Math.max(
     MAX_RETRIES,
-    accountManager.getAccountCount() + 1
+    accountManager.getAccountCount() + 1,
   );
 
   for (let attempt = 0; attempt < maxAttempts; attempt++) {
@@ -78,14 +78,14 @@ export async function sendMessage(
     const { account: stickyAccount, waitMs } = accountManager.pickStickyAccount(
       model,
       sessionId,
-      quotaType
+      quotaType,
     );
     let account = stickyAccount;
 
     // Handle waiting for sticky account
     if (!account && waitMs > 0) {
       logger.info(
-        `[CloudCode] Waiting ${formatDuration(waitMs)} for sticky account...`
+        `[CloudCode] Waiting ${formatDuration(waitMs)} for sticky account...`,
       );
       await sleep(waitMs);
       accountManager.clearExpiredLimits();
@@ -99,27 +99,28 @@ export async function sendMessage(
         const resetTime = new Date(Date.now() + allWaitMs).toISOString();
 
         // Always wait unless configured max is exceeded AND infinite mode is off
-        const shouldWait = config.infiniteRetryMode || allWaitMs <= MAX_WAIT_BEFORE_ERROR_MS;
-        
+        const shouldWait =
+          config.infiniteRetryMode || allWaitMs <= MAX_WAIT_BEFORE_ERROR_MS;
+
         if (!shouldWait) {
           throw new RateLimitError(
             `RESOURCE_EXHAUSTED: Rate limited on ${model}. Quota will reset after ${formatDuration(
-              allWaitMs
+              allWaitMs,
             )}. Next available: ${resetTime}`,
-            allWaitMs
+            allWaitMs,
           );
         }
 
         // Wait loop with progress logging
         const waitCount = Math.ceil(allWaitMs / 10000); // 10s chunks
         const accountCount = accountManager.getAccountCount();
-        
+
         logger.warn(
           `[CloudCode] All ${accountCount} account(s) rate-limited. Waiting ${formatDuration(
-            allWaitMs
-          )}...`
+            allWaitMs,
+          )}...`,
         );
-        
+
         // Track wait time
         usageStats.trackWait(allWaitMs);
 
@@ -129,9 +130,11 @@ export async function sendMessage(
           const chunk = Math.min(10000, allWaitMs - waited);
           await sleep(chunk);
           waited += chunk;
-          
+
           if (waited < allWaitMs) {
-             logger.info(`[CloudCode] Still waiting... ${formatDuration(allWaitMs - waited)} remaining`);
+            logger.info(
+              `[CloudCode] Still waiting... ${formatDuration(allWaitMs - waited)} remaining`,
+            );
           }
         }
 
@@ -147,7 +150,7 @@ export async function sendMessage(
         // This handles cases where the API rate limit is transient
         if (!account) {
           logger.warn(
-            "[CloudCode] No account available after wait, attempting optimistic reset..."
+            "[CloudCode] No account available after wait, attempting optimistic reset...",
           );
           accountManager.resetAllRateLimits(); // Reset all is still generic (clears all keys)
           account = accountManager.pickNext(model, quotaType);
@@ -179,7 +182,7 @@ export async function sendMessage(
     logger.info(
       `[${requestId}] Using account: ${account.email} (${
         accountIndex + 1
-      }/${accountCount})`
+      }/${accountCount})`,
     );
 
     try {
@@ -200,7 +203,10 @@ export async function sendMessage(
       let lastError = null;
       for (const endpoint of endpoints) {
         try {
-          const url = isThinking
+          // Force SSE for Sonnet 4.5 as generateContent endpoint appears unstable/hanging
+          const useSSE = isThinking || model === "claude-sonnet-4-5";
+
+          const url = useSSE
             ? `${endpoint}/v1internal:streamGenerateContent?alt=sse`
             : `${endpoint}/v1internal:generateContent`;
 
@@ -209,7 +215,7 @@ export async function sendMessage(
             headers: buildHeaders(
               token,
               model,
-              isThinking ? "text/event-stream" : "application/json"
+              useSSE ? "text/event-stream" : "application/json",
             ),
             body: JSON.stringify(payload),
           });
@@ -217,7 +223,7 @@ export async function sendMessage(
           if (!response.ok) {
             const errorText = await response.text();
             logger.warn(
-              `[CloudCode] Error at ${endpoint}: ${response.status} - ${errorText}`
+              `[CloudCode] Error at ${endpoint}: ${response.status} - ${errorText}`,
             );
 
             if (response.status === 401) {
@@ -231,7 +237,7 @@ export async function sendMessage(
             if (response.status === 429) {
               // Rate limited on this endpoint - try next endpoint first (DAILY → PROD)
               logger.debug(
-                `[CloudCode] Rate limited at ${endpoint}, trying next endpoint...`
+                `[CloudCode] Rate limited at ${endpoint}, trying next endpoint...`,
               );
               const resetMs = parseResetTime(response, errorText);
               // Keep minimum reset time across all 429 responses
@@ -246,12 +252,12 @@ export async function sendMessage(
 
             if (response.status >= 400) {
               lastError = new Error(
-                `API error ${response.status}: ${errorText}`
+                `API error ${response.status}: ${errorText}`,
               );
               // If it's a 5xx error, wait a bit before trying the next endpoint
               if (response.status >= 500) {
                 logger.warn(
-                  `[CloudCode] ${response.status} error, waiting 1s before retry...`
+                  `[CloudCode] ${response.status} error, waiting 1s before retry...`,
                 );
                 await sleep(1000);
               }
@@ -259,11 +265,11 @@ export async function sendMessage(
             }
           }
 
-          // For thinking models, parse SSE and accumulate all parts
-          if (isThinking) {
+          // For thinking models or forced SSE, parse SSE and accumulate all parts
+          if (useSSE) {
             const result = await parseThinkingSSEResponse(
               response,
-              anthropicRequest.model
+              anthropicRequest.model,
             );
 
             // Log token usage
@@ -279,14 +285,14 @@ export async function sendMessage(
                   cache_read_input_tokens > 0
                     ? `, Cached: ${cache_read_input_tokens}`
                     : ""
-                }`
+                }`,
               );
               // Track tokens for dashboard
               usageStats.trackTokens(
                 input_tokens,
                 output_tokens,
                 cache_read_input_tokens,
-                headerMode
+                headerMode,
               );
             }
 
@@ -314,14 +320,14 @@ export async function sendMessage(
                 cache_read_input_tokens > 0
                   ? `, Cached: ${cache_read_input_tokens}`
                   : ""
-              }`
+              }`,
             );
             // Track tokens for dashboard
             usageStats.trackTokens(
               input_tokens,
               output_tokens,
               cache_read_input_tokens,
-              headerMode
+              headerMode,
             );
           }
 
@@ -335,7 +341,7 @@ export async function sendMessage(
           }
           logger.warn(
             `[CloudCode] Error at ${endpoint}:`,
-            endpointError.message
+            endpointError.message,
           );
           lastError = endpointError;
         }
@@ -346,13 +352,13 @@ export async function sendMessage(
         // If all endpoints returned 429, mark account as rate-limited
         if (lastError.is429) {
           logger.warn(
-            `[CloudCode] All endpoints rate-limited for ${account.email}`
+            `[CloudCode] All endpoints rate-limited for ${account.email}`,
           );
           accountManager.markRateLimited(
             account.email,
             lastError.resetMs,
             model,
-            quotaType
+            quotaType,
           );
           throw new Error(`Rate limited: ${lastError.errorText}`);
         }
@@ -362,14 +368,14 @@ export async function sendMessage(
       if (isRateLimitError(error)) {
         // Rate limited - already marked, continue to next account
         logger.info(
-          `[CloudCode] Account ${account.email} rate-limited, trying next...`
+          `[CloudCode] Account ${account.email} rate-limited, trying next...`,
         );
         continue;
       }
       if (isAuthError(error)) {
         // Auth invalid - already marked, continue to next account
         logger.warn(
-          `[CloudCode] Account ${account.email} has invalid credentials, trying next...`
+          `[CloudCode] Account ${account.email} has invalid credentials, trying next...`,
         );
         continue;
       }
@@ -381,7 +387,7 @@ export async function sendMessage(
         error.message.includes("503")
       ) {
         logger.warn(
-          `[CloudCode] Account ${account.email} failed with 5xx error, trying next...`
+          `[CloudCode] Account ${account.email} failed with 5xx error, trying next...`,
         );
         accountManager.pickNext(model, quotaType); // Force advance to next account
         continue;
@@ -389,7 +395,7 @@ export async function sendMessage(
 
       if (isNetworkError(error)) {
         logger.warn(
-          `[CloudCode] Network error for ${account.email}, trying next account... (${error.message})`
+          `[CloudCode] Network error for ${account.email}, trying next account... (${error.message})`,
         );
         await sleep(1000); // Brief pause before retry
         accountManager.pickNext(model, quotaType); // Advance to next account
@@ -408,21 +414,23 @@ export async function sendMessage(
     if (fallbackChain && fallbackChain.length > 0) {
       logger.warn(
         `[CloudCode] All retries exhausted for ${model}. Attempting fallback chain: ${fallbackChain.join(
-          " -> "
-        )}`
+          " -> ",
+        )}`,
       );
-      
+
       for (const fallbackModel of fallbackChain) {
         try {
           logger.info(`[CloudCode] Trying fallback model: ${fallbackModel}`);
           usageStats.trackFallback(model, fallbackModel);
           const fallbackRequest = { ...anthropicRequest, model: fallbackModel };
-          // Do NOT enable fallback for these calls to avoid infinite loops, 
+          // Do NOT enable fallback for these calls to avoid infinite loops,
           // as we manage the chain here.
           return await sendMessage(fallbackRequest, accountManager, false);
         } catch (err) {
-           logger.warn(`[CloudCode] Fallback ${fallbackModel} failed: ${err.message}`);
-           // Continue to next fallback in chain
+          logger.warn(
+            `[CloudCode] Fallback ${fallbackModel} failed: ${err.message}`,
+          );
+          // Continue to next fallback in chain
         }
       }
     }

@@ -29,6 +29,12 @@ const CLI_MODEL_ALIASES = {
 
   // Image variants
   "gemini-3-pro-image-preview": "gemini-3-pro-image",
+
+  // Gemini 2.5 aliases (mapping to 2.0 exp/preview models)
+  "gemini-2.5-flash-thinking": "gemini-2.0-flash-thinking-exp",
+  "gemini-2.5-flash": "gemini-2.0-flash-exp",
+  "gemini-2.5-flash-lite": "gemini-2.0-flash-lite-preview-02-05",
+  "gemini-2.5-pro": "gemini-2.0-pro-exp-02-05",
 };
 
 /**
@@ -96,7 +102,7 @@ export function resolveModelForHeaderMode(requestedModel) {
     return {
       actualModel: actualModel + cacheSuffix,
       originalModel: requestedModel,
-      thinkingLevel: tier || "high", // Default to 'high' for Gemini 3
+      thinkingLevel: tier || (isGemini3 ? "high" : null),
       headerMode,
     };
   }

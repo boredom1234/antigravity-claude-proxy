@@ -4,7 +4,7 @@
  */
 
 import { logger } from "../utils/logger.js";
-import { sendMessage } from "../cloudcode/index.js";
+import { sendMessage, sendMessageStream } from "../cloudcode/index.js";
 
 /**
  * Convert OpenAI message format to Anthropic message format
@@ -123,20 +123,82 @@ export const createOpenAIController = (context) => {
         // Reuse existing Cloud Code logic
         // Note: We currently only support non-streaming for simplification
         // If stream=true, we might need to adapt the SSE stream
+        // Helper to convert Anthropic delta to OpenAI chunk
+        const convertAnthropicChunkToOpenAI = (event, modelId) => {
+          const timestamp = Math.floor(Date.now() / 1000);
+
+          if (event.type === "content_block_delta" && event.delta?.text) {
+            return {
+              id: `chatcmpl-${timestamp}`,
+              object: "chat.completion.chunk",
+              created: timestamp,
+              model: modelId,
+              choices: [
+                {
+                  index: 0,
+                  delta: { content: event.delta.text },
+                  finish_reason: null,
+                },
+              ],
+            };
+          }
+
+          if (event.type === "message_stop") {
+            return {
+              id: `chatcmpl-${timestamp}`,
+              object: "chat.completion.chunk",
+              created: timestamp,
+              model: modelId,
+              choices: [
+                {
+                  index: 0,
+                  delta: {},
+                  finish_reason: "stop",
+                },
+              ],
+            };
+          }
+
+          return null;
+        };
+
+        // Streaming support
         if (stream) {
-          // TODO: Implement streaming support
-          return res.status(400).json({
-            error: {
-              message: "Streaming is not yet supported for this endpoint",
-              type: "invalid_request_error",
-            },
-          });
+          res.setHeader("Content-Type", "text/event-stream");
+          res.setHeader("Cache-Control", "no-cache");
+          res.setHeader("Connection", "keep-alive");
+          res.flushHeaders();
+
+          try {
+            for await (const event of sendMessageStream(
+              request,
+              accountManager,
+              false,
+            )) {
+              const chunk = convertAnthropicChunkToOpenAI(
+                event,
+                model || "claude-3-5-sonnet-20241022",
+              );
+              if (chunk) {
+                res.write(`data: ${JSON.stringify(chunk)}\n\n`);
+              }
+            }
+            res.write("data: [DONE]\n\n");
+            res.end();
+          } catch (streamError) {
+            logger.error("[OpenAI] Stream error:", streamError);
+            res.write(
+              `data: ${JSON.stringify({ error: { message: streamError.message, type: "api_error" } })}\n\n`,
+            );
+            res.end();
+          }
+          return;
         }
 
         const response = await sendMessage(request, accountManager);
         const openAIResponse = convertAnthropicToOpenAIResponse(
           response,
-          model
+          model,
         );
 
         res.json(openAIResponse);
