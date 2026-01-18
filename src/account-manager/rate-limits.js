@@ -29,7 +29,7 @@ function buildQuotaKey(modelId, quotaType = null) {
 
 /**
  * Check if a single account is rate-limited for a specific model and quota type
- * 
+ *
  * @param {Object} account - Account object
  * @param {string} modelId - Model ID
  * @param {string} [quotaType] - Optional quota type
@@ -41,7 +41,16 @@ export function isAccountRateLimited(account, modelId, quotaType = null) {
 
   const key = buildQuotaKey(modelId, quotaType);
   const limit = account.modelRateLimits && account.modelRateLimits[key];
-  
+
+  // Check if model is manually disabled by quota protection
+  if (
+    modelId &&
+    account.disabledModels &&
+    account.disabledModels.includes(modelId)
+  ) {
+    return true;
+  }
+
   return !!(limit && limit.isRateLimited && limit.resetTime > Date.now());
 }
 
@@ -106,7 +115,7 @@ export function isAllRateLimited(accounts, modelId, quotaType = null) {
 export function getAvailableAccounts(
   accounts,
   modelId = null,
-  quotaType = null
+  quotaType = null,
 ) {
   const quotaKey = modelId ? buildQuotaKey(modelId, quotaType) : null;
 
@@ -133,6 +142,10 @@ export function getAvailableAccounts(
       acc.quota?.models?.[modelId]
     ) {
       const quota = acc.quota.models[modelId];
+      // Also check if model is explicitly disabled (redundant with isAccountRateLimited but good for clarity)
+      if (acc.disabledModels && acc.disabledModels.includes(modelId)) {
+        return false;
+      }
       if (
         typeof quota.remainingFraction === "number" &&
         quota.remainingFraction < MIN_QUOTA_FRACTION
@@ -180,7 +193,7 @@ export function clearExpiredLimits(accounts) {
           limit.resetTime = null;
           cleared++;
           logger.success(
-            `[AccountManager] Rate limit expired for: ${account.email} (${quotaKey})`
+            `[AccountManager] Rate limit expired for: ${account.email} (${quotaKey})`,
           );
         }
       }
@@ -233,7 +246,7 @@ export function resetRateLimitsForModel(accounts, modelId, quotaType = null) {
 
   if (clearedCount > 0) {
     logger.warn(
-      `[AccountManager] Reset ${clearedCount} rate limits for model ${modelId} (optimistic retry)`
+      `[AccountManager] Reset ${clearedCount} rate limits for model ${modelId} (optimistic retry)`,
     );
   }
 }
@@ -250,7 +263,7 @@ export function resetRateLimitsForModel(accounts, modelId, quotaType = null) {
 export function optimisticReset(accounts, modelId, threshold = 5000) {
   const now = Date.now();
   let resetCount = 0;
-  
+
   for (const account of accounts) {
     if (account.modelRateLimits) {
       // Check specific model limits
@@ -262,12 +275,14 @@ export function optimisticReset(accounts, modelId, threshold = 5000) {
           limit.isRateLimited = false;
           limit.resetTime = null;
           resetCount++;
-          logger.debug(`[AccountManager] Optimistic reset for ${account.email} (${remaining}ms remaining)`);
+          logger.debug(
+            `[AccountManager] Optimistic reset for ${account.email} (${remaining}ms remaining)`,
+          );
         }
       }
     }
   }
-  
+
   return resetCount;
 }
 
@@ -306,7 +321,7 @@ export function markRateLimited(
   resetMs = null,
   settings = {},
   modelId,
-  quotaType = null
+  quotaType = null,
 ) {
   const account = accounts.find((a) => a.email === email);
   if (!account) return false;
@@ -337,8 +352,8 @@ export function markRateLimited(
   const quotaLabel = quotaType ? ` [${quotaType}]` : "";
   logger.warn(
     `[AccountManager] Rate limited: ${email} (model: ${modelId}${quotaLabel}). Available in ${formatDuration(
-      cooldownMs
-    )}`
+      cooldownMs,
+    )}`,
   );
 
   return true;
@@ -363,7 +378,7 @@ export function markInvalid(accounts, email, reason = "Unknown error") {
   logger.error(`[AccountManager] ⚠ Account INVALID: ${email}`);
   logger.error(`[AccountManager]   Reason: ${reason}`);
   logger.error(
-    `[AccountManager]   Run 'npm run accounts' to re-authenticate this account`
+    `[AccountManager]   Run 'npm run accounts' to re-authenticate this account`,
   );
 
   return true;
@@ -426,7 +441,7 @@ export function getMinWaitTimeMs(accounts, modelId, quotaType = null) {
         if (!resetTimeMs || resetTimeMs > Date.now()) {
           isQuotaLimited = true;
           if (resetTimeMs) {
-             quotaResetTime = resetTimeMs;
+            quotaResetTime = resetTimeMs;
           }
         }
       }

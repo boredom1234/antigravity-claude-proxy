@@ -55,7 +55,7 @@ window.Components.dashboard = () => ({
         } else {
           this._debouncedUpdateCharts = window.utils.debounce(
             () => this.updateCharts(),
-            100
+            100,
           );
           this._debouncedUpdateCharts();
         }
@@ -160,7 +160,7 @@ window.Components.dashboard = () => ({
       setTimeout(() => this.ensureCharts(attempts + 1), 100);
     } else {
       console.warn(
-        "Dashboard charts failed to initialize: Canvas not ready after timeout"
+        "Dashboard charts failed to initialize: Canvas not ready after timeout",
       );
     }
   },
@@ -197,7 +197,7 @@ window.Components.dashboard = () => ({
           if (!tree[key]) tree[key] = new Set();
 
           Object.keys(value).forEach((modelName) => {
-            if (modelName !== "_subtotal") {
+            if (!modelName.startsWith("_")) {
               tree[key].add(modelName);
             }
           });

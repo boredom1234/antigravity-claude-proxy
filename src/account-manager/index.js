@@ -64,7 +64,7 @@ export class AccountManager {
     if (this.#initialized) return;
 
     const { accounts, settings, activeIndex } = await loadAccounts(
-      this.#configPath
+      this.#configPath,
     );
 
     this.#accounts = accounts;
@@ -74,7 +74,7 @@ export class AccountManager {
     // If config exists but has no accounts, fall back to Antigravity database
     if (this.#accounts.length === 0) {
       logger.warn(
-        "[AccountManager] No accounts in config. Falling back to Antigravity database"
+        "[AccountManager] No accounts in config. Falling back to Antigravity database",
       );
       const { accounts: defaultAccounts, tokenCache } = loadDefaultAccount();
       this.#accounts = defaultAccounts;
@@ -221,7 +221,7 @@ export class AccountManager {
       this.#currentIndex,
       () => this.saveToDisk(),
       modelId,
-      quotaType
+      quotaType,
     );
     this.#currentIndex = newIndex;
     return account;
@@ -239,7 +239,7 @@ export class AccountManager {
       this.#currentIndex,
       () => this.saveToDisk(),
       modelId,
-      quotaType
+      quotaType,
     );
     this.#currentIndex = newIndex;
     return account;
@@ -292,7 +292,7 @@ export class AccountManager {
       modelId,
       sessionId,
       this.#sessionMap,
-      quotaType
+      quotaType,
     );
 
     this.#currentIndex = newIndex;
@@ -306,7 +306,14 @@ export class AccountManager {
    * @param {string} [modelId] - Optional model ID to mark specific limit
    */
   markRateLimited(email, resetMs = null, modelId = null, quotaType = null) {
-    markLimited(this.#accounts, email, resetMs, this.#settings, modelId, quotaType);
+    markLimited(
+      this.#accounts,
+      email,
+      resetMs,
+      this.#settings,
+      modelId,
+      quotaType,
+    );
     this.saveToDisk();
   }
 
@@ -339,7 +346,7 @@ export class AccountManager {
     const newCount = (account.activeRequests || 0) + 1;
     account.activeRequests = newCount;
     logger.debug(
-      `[AccountManager] Account ${account.email} concurrency: ${newCount}`
+      `[AccountManager] Account ${account.email} concurrency: ${newCount}`,
     );
     return newCount;
   }
@@ -359,11 +366,11 @@ export class AccountManager {
     // Log warning if we tried to decrement below 0
     if (currentCount === 0) {
       logger.warn(
-        `[AccountManager] Attempted to decrement activeRequests below 0 for ${account.email}`
+        `[AccountManager] Attempted to decrement activeRequests below 0 for ${account.email}`,
       );
     } else {
       logger.debug(
-        `[AccountManager] Account ${account.email} concurrency: ${newCount}`
+        `[AccountManager] Account ${account.email} concurrency: ${newCount}`,
       );
     }
     return newCount;
@@ -388,7 +395,7 @@ export class AccountManager {
       account,
       this.#tokenCache,
       (email, reason) => this.markInvalid(email, reason),
-      () => this.saveToDisk()
+      () => this.saveToDisk(),
     );
   }
 
@@ -436,7 +443,7 @@ export class AccountManager {
           this.#configPath,
           this.#accounts,
           this.#settings,
-          this.#currentIndex
+          this.#currentIndex,
         );
         this.#lastSaveError = null;
         this.#saveErrorCount = 0;
@@ -446,13 +453,13 @@ export class AccountManager {
         logger.error(
           `[AccountManager] Failed to save config (attempt ${
             this.#saveErrorCount
-          }): ${error.message}`
+          }): ${error.message}`,
         );
 
         // Log warning if errors persist
         if (this.#saveErrorCount >= 3) {
           logger.warn(
-            "[AccountManager] Persistent save failures - account state may not be persisted"
+            "[AccountManager] Persistent save failures - account state may not be persisted",
           );
         }
       } finally {
@@ -494,7 +501,7 @@ export class AccountManager {
     const rateLimited = this.#accounts.filter((a) => {
       if (!a.modelRateLimits) return false;
       return Object.values(a.modelRateLimits).some(
-        (limit) => limit.isRateLimited && limit.resetTime > Date.now()
+        (limit) => limit.isRateLimited && limit.resetTime > Date.now(),
       );
     });
 
@@ -517,7 +524,9 @@ export class AccountManager {
         isInvalid: a.isInvalid || false,
         invalidReason: a.invalidReason || null,
         lastUsed: a.lastUsed,
+        lastUsed: a.lastUsed,
         activeRequests: a.activeRequests || 0,
+        disabledModels: a.disabledModels || [],
       })),
     };
   }
@@ -541,7 +550,7 @@ export class AccountManager {
     }
 
     const existingIndex = this.#accounts.findIndex(
-      (a) => a.email === accountData.email
+      (a) => a.email === accountData.email,
     );
 
     if (existingIndex !== -1) {
@@ -571,7 +580,9 @@ export class AccountManager {
         lastUsed: null,
         addedAt: new Date().toISOString(),
         subscription: { tier: "unknown", projectId: null, detectedAt: null },
+        subscription: { tier: "unknown", projectId: null, detectedAt: null },
         quota: { models: {}, lastChecked: null },
+        disabledModels: [],
       });
       logger.info(`[AccountManager] Account added: ${accountData.email}`);
     }
@@ -620,7 +631,7 @@ export class AccountManager {
 
     account.enabled = enabled;
     logger.info(
-      `[AccountManager] Account ${email} ${enabled ? "enabled" : "disabled"}`
+      `[AccountManager] Account ${email} ${enabled ? "enabled" : "disabled"}`,
     );
     await this.saveToDisk();
     return true;
@@ -633,6 +644,52 @@ export class AccountManager {
    */
   getAllAccounts() {
     return this.#accounts;
+  }
+
+  /**
+   * Check and protect quota for an account/model
+   * Auto-disables models when quota is low to preserve it, and auto-restores when recovered.
+   * @param {Object} account - Account object
+   * @param {string} modelName - Model name
+   * @param {number} remainingPercentage - Remaining quota percentage
+   */
+  async checkAndProtectQuota(account, modelName, remainingPercentage) {
+    if (!account || !modelName) return;
+
+    // Threshold for disabling a model (e.g., 5%)
+    const PROTECTION_THRESHOLD = this.#settings.quotaProtectionThreshold || 5;
+
+    // Normalize model name (remove version/dates if needed, but keeping exact match for now is safer)
+
+    // Initialize disabledModels if not present
+    if (!account.disabledModels) {
+      account.disabledModels = [];
+    }
+
+    const isDisabled = account.disabledModels.includes(modelName);
+
+    // Case 1: Quota is low, and model is NOT yet disabled -> Disable it
+    if (remainingPercentage < PROTECTION_THRESHOLD && !isDisabled) {
+      account.disabledModels.push(modelName);
+      logger.warn(
+        `[AccountManager] Quota protection ENABLED for ${account.email} on ${modelName} (${remainingPercentage}% < ${PROTECTION_THRESHOLD}%). Model disabled.`,
+      );
+      await this.saveToDisk();
+      return;
+    }
+
+    // Case 2: Quota is recovered (above threshold + buffer), and model IS disabled -> Enable it
+    // Add a small buffer (e.g., 2%) to prevent flapping
+    if (remainingPercentage > PROTECTION_THRESHOLD + 2 && isDisabled) {
+      account.disabledModels = account.disabledModels.filter(
+        (m) => m !== modelName,
+      );
+      logger.info(
+        `[AccountManager] Quota protection RESTORED for ${account.email} on ${modelName} (${remainingPercentage}% > ${PROTECTION_THRESHOLD + 2}%). Model re-enabled.`,
+      );
+      await this.saveToDisk();
+      return;
+    }
   }
 
   /**

@@ -28,10 +28,12 @@ const DATA_DIR = path.dirname(CACHE_FILE_PATH);
 
 const signatureCache = new Map();
 const thinkingSignatureCache = new Map();
+const sessionSignatureCache = new Map();
 
 // Maximum cache sizes to prevent unbounded memory growth
 const MAX_SIGNATURE_CACHE_SIZE = 10000;
 const MAX_THINKING_CACHE_SIZE = 5000;
+const MAX_SESSION_CACHE_SIZE = 1000;
 
 // Cleanup interval reference
 let cleanupInterval = null;
@@ -67,8 +69,15 @@ function loadCache() {
         }
       }
 
+      // Load session signatures
+      if (data.sessionSignatures) {
+        for (const [key, value] of Object.entries(data.sessionSignatures)) {
+          sessionSignatureCache.set(key, value);
+        }
+      }
+
       logger.debug(
-        `[SignatureCache] Loaded ${signatureCache.size} signatures and ${thinkingSignatureCache.size} thinking signatures from disk`,
+        `[SignatureCache] Loaded ${signatureCache.size} signatures, ${thinkingSignatureCache.size} thinking signatures, and ${sessionSignatureCache.size} session signatures from disk`,
       );
     }
   } catch (err) {
@@ -87,6 +96,7 @@ function saveCache() {
     const data = {
       signatures: Object.fromEntries(signatureCache),
       thinkingSignatures: Object.fromEntries(thinkingSignatureCache),
+      sessionSignatures: Object.fromEntries(sessionSignatureCache),
     };
 
     fs.writeFileSync(CACHE_FILE_PATH, JSON.stringify(data, null, 2));
@@ -166,10 +176,16 @@ export function cleanupCache() {
       cleaned++;
     }
   }
+  for (const [key, entry] of sessionSignatureCache) {
+    if (now - entry.timestamp > GEMINI_SIGNATURE_CACHE_TTL_MS) {
+      sessionSignatureCache.delete(key);
+      cleaned++;
+    }
+  }
 
   if (cleaned > 0) {
     logger.debug(
-      `[SignatureCache] Cleaned up ${cleaned} expired entries. Remaining: signatures=${signatureCache.size}, thinking=${thinkingSignatureCache.size}`,
+      `[SignatureCache] Cleaned up ${cleaned} expired entries. Remaining: signatures=${signatureCache.size}, thinking=${thinkingSignatureCache.size}, session=${sessionSignatureCache.size}`,
     );
     isDirty = true;
     saveCache(); // Save after cleanup
@@ -279,6 +295,58 @@ export function getThinkingCacheSize() {
 }
 
 /**
+ * Store the latest thinking signature for a session
+ * This is the preferred method for tracking signatures across tool loops
+ * @param {string} sessionId - Session fingerprint
+ * @param {string} signature - The thought signature to store
+ */
+export function cacheSessionSignature(sessionId, signature) {
+  if (!sessionId || !signature) return;
+
+  // Evict oldest entries if over limit
+  if (sessionSignatureCache.size >= MAX_SESSION_CACHE_SIZE) {
+    const oldestKey = sessionSignatureCache.keys().next().value;
+    sessionSignatureCache.delete(oldestKey);
+    logger.debug(
+      `[SignatureCache] Evicted oldest session entry, cache size: ${sessionSignatureCache.size}`,
+    );
+  }
+
+  sessionSignatureCache.set(sessionId, {
+    signature,
+    timestamp: Date.now(),
+  });
+  isDirty = true;
+}
+
+/**
+ * Retrieve the latest thinking signature for a session
+ * @param {string} sessionId - Session fingerprint
+ * @returns {string|null} The cached signature or null if not found/expired
+ */
+export function getSessionSignature(sessionId) {
+  if (!sessionId) return null;
+  const entry = sessionSignatureCache.get(sessionId);
+  if (!entry) return null;
+
+  // Check TTL
+  if (Date.now() - entry.timestamp > GEMINI_SIGNATURE_CACHE_TTL_MS) {
+    sessionSignatureCache.delete(sessionId);
+    return null;
+  }
+
+  return entry.signature;
+}
+
+/**
+ * Get the current session signature cache size (for debugging)
+ * @returns {number} Number of entries in the session signature cache
+ */
+export function getSessionCacheSize() {
+  return sessionSignatureCache.size;
+}
+
+/**
  * Clear the signature cache (for testing)
  */
 export function clearSignatureCache() {
@@ -294,4 +362,13 @@ export function clearThinkingSignatureCache() {
   thinkingSignatureCache.clear();
   isDirty = true;
   logger.debug("[SignatureCache] Cleared thinking signature cache");
+}
+
+/**
+ * Clear the session signature cache (for testing)
+ */
+export function clearSessionSignatureCache() {
+  sessionSignatureCache.clear();
+  isDirty = true;
+  logger.debug("[SignatureCache] Cleared session signature cache");
 }
