@@ -38,6 +38,7 @@ import AccountManager from "./account-manager/index.js";
 import { logger } from "./utils/logger.js";
 import usageStats from "./modules/usage-stats.js";
 import { formatDuration, estimateTokens } from "./utils/helpers.js";
+import { clearThinkingSignatureCache } from "./format/signature-cache.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -57,7 +58,7 @@ async function initialize() {
   await accountManager.initialize();
 
   logger.info(
-    `[Server] Account manager initialized with ${accountManager.getAccountCount()} accounts`
+    `[Server] Account manager initialized with ${accountManager.getAccountCount()} accounts`,
   );
 
   return true;
@@ -98,6 +99,7 @@ const FALLBACK_ENABLED =
 const app = express();
 
 // Basic Middleware
+app.disable("x-powered-by");
 app.use(cors());
 app.use(requestIdMiddleware);
 app.use(
@@ -106,7 +108,7 @@ app.use(
     verify: (req, _res, buf) => {
       req.rawBody = buf;
     },
-  })
+  }),
 );
 app.use(contentTypeMiddleware);
 
@@ -160,6 +162,24 @@ app.use((req, res, next) => {
 mountWebUI(app, __dirname, () => accountManager);
 
 /**
+ * Silent handler for Claude Code CLI root POST requests
+ * Claude Code sends heartbeat/event requests to POST / which we don't need
+ * Using app.use instead of app.post for earlier middleware interception
+ */
+app.use((req, res, next) => {
+  // Handle Claude Code event logging requests silently
+  if (req.method === "POST" && req.path === "/api/event_logging/batch") {
+    return res.status(200).json({ status: "ok" });
+  }
+
+  // Handle root POST silently (heartbeat)
+  if (req.method === "POST" && req.path === "/") {
+    return res.status(200).json({ status: "ok" });
+  }
+  next();
+});
+
+/**
  * Validate the fallback map for cycles at startup
  */
 function validateFallbackMap() {
@@ -209,9 +229,9 @@ app.get("/health", async (req, res) => {
       allAccounts.map(async (account) => {
         // Check model-specific rate limits
         const activeModelLimits = Object.entries(
-          account.modelRateLimits || {}
+          account.modelRateLimits || {},
         ).filter(
-          ([_, limit]) => limit.isRateLimited && limit.resetTime > Date.now()
+          ([_, limit]) => limit.isRateLimited && limit.resetTime > Date.now(),
         );
         const isRateLimited = activeModelLimits.length > 0;
         const soonestReset =
@@ -270,7 +290,7 @@ app.get("/health", async (req, res) => {
             models: {},
           };
         }
-      })
+      }),
     );
 
     // Process results
@@ -379,7 +399,7 @@ app.get("/account-limits", async (req, res) => {
             models: {},
           };
         }
-      })
+      }),
     );
 
     // Process results
@@ -418,7 +438,7 @@ app.get("/account-limits", async (req, res) => {
       // Get account status info
       const status = accountManager.getStatus();
       lines.push(
-        `Accounts: ${status.total} total, ${status.available} available, ${status.rateLimited} rate-limited, ${status.invalid} invalid`
+        `Accounts: ${status.total} total, ${status.available} available, ${status.rateLimited} rate-limited, ${status.invalid} invalid`,
       );
       lines.push("");
 
@@ -436,8 +456,8 @@ app.get("/account-limits", async (req, res) => {
       lines.push(accHeader);
       lines.push(
         "─".repeat(
-          accColWidth + statusColWidth + lastUsedColWidth + resetColWidth
-        )
+          accColWidth + statusColWidth + lastUsedColWidth + resetColWidth,
+        ),
       );
 
       for (const acc of status.accounts) {
@@ -458,7 +478,7 @@ app.get("/account-limits", async (req, res) => {
           const models = accLimit?.models || {};
           const modelCount = Object.keys(models).length;
           const exhaustedCount = Object.values(models).filter(
-            (q) => q.remainingFraction === 0 || q.remainingFraction === null
+            (q) => q.remainingFraction === 0 || q.remainingFraction === null,
           ).length;
 
           if (exhaustedCount === 0) {
@@ -504,7 +524,7 @@ app.get("/account-limits", async (req, res) => {
       }
       lines.push(header);
       lines.push(
-        "─".repeat(modelColWidth + accountLimits.length * accountColWidth)
+        "─".repeat(modelColWidth + accountLimits.length * accountColWidth),
       );
 
       // Data rows
@@ -547,7 +567,7 @@ app.get("/account-limits", async (req, res) => {
     // Get account metadata from AccountManager
     const accountStatus = accountManager.getStatus();
     const accountMetadataMap = new Map(
-      accountStatus.accounts.map((a) => [a.email, a])
+      accountStatus.accounts.map((a) => [a.email, a]),
     );
 
     // Build response data
@@ -592,7 +612,7 @@ app.get("/account-limits", async (req, res) => {
                   resetTime: quota.resetTime || null,
                 },
               ];
-            })
+            }),
           ),
         };
       }),
@@ -634,6 +654,16 @@ app.post("/refresh-token", async (req, res) => {
       error: error.message,
     });
   }
+});
+
+/**
+ * Test endpoint - Clear thinking signature cache
+ * Used for testing cold cache scenarios in cross-model tests
+ */
+app.post("/test/clear-signature-cache", (req, res) => {
+  clearThinkingSignatureCache();
+  logger.debug("[Test] Cleared thinking signature cache");
+  res.json({ success: true, message: "Thinking signature cache cleared" });
 });
 
 /**
@@ -748,7 +778,7 @@ app.post(
       ) {
         const targetModel = modelMapping[requestedModel].mapping;
         logger.info(
-          `[Server] Mapping model ${requestedModel} -> ${targetModel}`
+          `[Server] Mapping model ${requestedModel} -> ${targetModel}`,
         );
         requestedModel = targetModel;
       }
@@ -759,7 +789,7 @@ app.post(
       // Ideally we should check specific quota types here, but for now we rely on the helper to pick.
       if (accountManager.isAllRateLimited(modelId)) {
         logger.warn(
-          `[Server] All accounts rate-limited for ${modelId}. Request may fail if no accounts become available.`
+          `[Server] All accounts rate-limited for ${modelId}. Request may fail if no accounts become available.`,
         );
       }
 
@@ -797,7 +827,7 @@ app.post(
       logger.info(
         `[API] Request for model: ${
           request.model
-        }, stream: ${!!stream}, headers: ${headerMode}`
+        }, stream: ${!!stream}, headers: ${headerMode}`,
       );
 
       // Debug: Log message structure to diagnose tool_use/tool_result ordering
@@ -807,8 +837,8 @@ app.post(
           const contentTypes = Array.isArray(msg.content)
             ? msg.content.map((c) => c.type || "text").join(", ")
             : typeof msg.content === "string"
-            ? "text"
-            : "unknown";
+              ? "text"
+              : "unknown";
           logger.debug(`  [${i}] ${msg.role}: ${contentTypes}`);
         });
       }
@@ -828,10 +858,10 @@ app.post(
           for await (const event of sendMessageStream(
             request,
             accountManager,
-            FALLBACK_ENABLED
+            FALLBACK_ENABLED,
           )) {
             res.write(
-              `event: ${event.type}\ndata: ${JSON.stringify(event)}\n\n`
+              `event: ${event.type}\ndata: ${JSON.stringify(event)}\n\n`,
             );
             // Flush after each event for real-time streaming
             if (res.flush) res.flush();
@@ -847,7 +877,7 @@ app.post(
         const response = await sendMessage(
           request,
           accountManager,
-          FALLBACK_ENABLED
+          FALLBACK_ENABLED,
         );
         res.json(response);
       }
@@ -872,7 +902,7 @@ app.post(
       }
 
       logger.warn(
-        `[API] Returning error response: ${statusCode} ${errorType} - ${errorMessage}`
+        `[API] Returning error response: ${statusCode} ${errorType} - ${errorMessage}`,
       );
 
       // Check if headers have already been sent (for streaming that failed mid-way)
@@ -882,7 +912,7 @@ app.post(
           `event: error\ndata: ${JSON.stringify({
             type: "error",
             error: { type: errorType, message: errorMessage },
-          })}\n\n`
+          })}\n\n`,
         );
         res.end();
       } else {
@@ -895,7 +925,7 @@ app.post(
         });
       }
     }
-  }
+  },
 );
 
 // Event Logging (for Cline/WebUI clients)
@@ -938,7 +968,7 @@ async function startServer() {
       logger.info(
         `[Server] WebUI available at http://localhost:${
           config.port || DEFAULT_PORT
-        }`
+        }`,
       );
     });
 
