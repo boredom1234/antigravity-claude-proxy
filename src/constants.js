@@ -145,6 +145,7 @@ export const MAX_ACCOUNTS = config?.maxAccounts || 10; // From config or 10
 
 // Rate limit wait thresholds
 export const MAX_WAIT_BEFORE_ERROR_MS = config?.maxWaitBeforeErrorMs || 600000; // From config or 10 minutes
+export const ABSOLUTE_MAX_WAIT_MS = 3600000; // Hard cap of 1 hour for infinite retry mode safety
 export const INFINITE_RETRY_MODE = config?.infiniteRetryMode || false; // Never give up
 export const WAIT_PROGRESS_INTERVAL_MS = 10000; // Send progress updates every 10s while waiting
 export const RETRY_DELAY_MS = 1000;
@@ -326,6 +327,7 @@ export default {
   MAX_EMPTY_RESPONSE_RETRIES,
   MAX_ACCOUNTS,
   MAX_WAIT_BEFORE_ERROR_MS,
+  ABSOLUTE_MAX_WAIT_MS,
   MIN_SIGNATURE_LENGTH,
   GEMINI_MAX_OUTPUT_TOKENS,
   DEFAULT_MAX_TOKENS,

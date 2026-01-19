@@ -6,6 +6,7 @@ import { logger } from "./utils/logger.js";
 // Default config
 const DEFAULT_CONFIG = {
   apiKey: "",
+  authToken: "", // Token for API authentication (ANTHROPIC_AUTH_TOKEN)
   webuiPassword: "",
   debug: false,
   logLevel: "info",
@@ -27,6 +28,7 @@ const DEFAULT_CONFIG = {
 
 // Env Var Mapping (Env Name -> Config Key)
 const ENV_MAPPING = {
+  AUTH_TOKEN: "authToken",
   WEBUI_PASSWORD: "webuiPassword",
   DEBUG: "debug",
   LOG_LEVEL: "logLevel",

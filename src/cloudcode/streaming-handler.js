@@ -10,6 +10,7 @@ import {
   MAX_RETRIES,
   MAX_EMPTY_RESPONSE_RETRIES,
   MAX_WAIT_BEFORE_ERROR_MS,
+  ABSOLUTE_MAX_WAIT_MS,
   getModelFamily,
   WAIT_PROGRESS_INTERVAL_MS,
   RETRY_DELAY_MS,
@@ -105,8 +106,11 @@ export async function* sendMessageStream(
         const resetTime = new Date(Date.now() + allWaitMs).toISOString();
 
         // Always wait unless configured max is exceeded AND infinite mode is off
-        const shouldWait =
-          config.infiniteRetryMode || allWaitMs <= MAX_WAIT_BEFORE_ERROR_MS;
+        // Safety: Cap infinite retry mode at ABSOLUTE_MAX_WAIT_MS (1 hour)
+        const cappedWaitMs = Math.min(allWaitMs, ABSOLUTE_MAX_WAIT_MS);
+        const shouldWait = config.infiniteRetryMode
+          ? allWaitMs <= ABSOLUTE_MAX_WAIT_MS
+          : allWaitMs <= MAX_WAIT_BEFORE_ERROR_MS;
 
         if (!shouldWait) {
           throw new RateLimitError(
@@ -118,18 +122,20 @@ export async function* sendMessageStream(
         }
 
         // Wait for reset (applies to both single and multi-account modes)
+        // Use cappedWaitMs for actual wait to respect safety limit
+        const waitTimeMs = config.infiniteRetryMode ? cappedWaitMs : allWaitMs;
         const accountCount = accountManager.getAccountCount();
         logger.warn(
           `[CloudCode] All ${accountCount} account(s) rate-limited. Waiting ${formatDuration(
-            allWaitMs,
+            waitTimeMs,
           )}...`,
         );
 
         // Track wait time
-        usageStats.trackWait(allWaitMs);
+        usageStats.trackWait(waitTimeMs);
 
         // Emit SSE progress events during wait
-        yield* emitWaitProgress(model, allWaitMs);
+        yield* emitWaitProgress(model, waitTimeMs);
 
         // Add small buffer after waiting to ensure rate limits have truly expired
         await sleep(500);
@@ -269,6 +275,9 @@ export async function* sendMessageStream(
           // Stream the response with retry logic for empty responses
           // Uses a for-loop for clearer retry semantics
           let currentResponse = response;
+          // Track 5xx retries separately
+          let serverErrorRetries = 0;
+          const MAX_SERVER_ERROR_RETRIES = 2;
 
           for (
             let emptyRetries = 0;
@@ -349,6 +358,16 @@ export async function* sendMessageStream(
 
                 // For 5xx errors, don't pass to streamer - just continue to next retry
                 if (currentResponse.status >= 500) {
+                  serverErrorRetries++;
+                  if (serverErrorRetries > MAX_SERVER_ERROR_RETRIES) {
+                    logger.error(
+                      `[CloudCode] Max server errors (${MAX_SERVER_ERROR_RETRIES}) exceeded during retry`,
+                    );
+                    throw new Error(
+                      `Server error ${currentResponse.status} after ${MAX_SERVER_ERROR_RETRIES} retries`,
+                    );
+                  }
+
                   logger.warn(
                     `[CloudCode] Retry got ${currentResponse.status}, will retry...`,
                   );

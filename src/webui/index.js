@@ -57,6 +57,43 @@ const authAttempts = new Map();
 const MAX_AUTH_ATTEMPTS = 5;
 const AUTH_LOCKOUT_MS = 15 * 60 * 1000; // 15 mins
 
+// Rate limiting for OAuth flow initiation (IP -> { count, resetAt })
+const oauthAttempts = new Map();
+const MAX_OAUTH_ATTEMPTS = 5; // Allow a few retries
+const OAUTH_WINDOW_MS = 5 * 60 * 1000; // 5 minutes
+
+/**
+ * Check rate limit for OAuth attempts
+ */
+function checkOAuthRateLimit(req, res, next) {
+  const ip = req.ip;
+  const now = Date.now();
+
+  if (!oauthAttempts.has(ip)) {
+    oauthAttempts.set(ip, { count: 0, resetAt: now + OAUTH_WINDOW_MS });
+  }
+
+  const record = oauthAttempts.get(ip);
+
+  // Reset window if expired
+  if (now > record.resetAt) {
+    record.count = 0;
+    record.resetAt = now + OAUTH_WINDOW_MS;
+  }
+
+  if (record.count >= MAX_OAUTH_ATTEMPTS) {
+    logger.warn(`[WebUI] OAuth rate limit exceeded for ${ip}`);
+    return res.status(429).json({
+      status: "error",
+      error: "Too many OAuth attempts. Please try again in a few minutes.",
+    });
+  }
+
+  record.count++;
+  oauthAttempts.set(ip, record);
+  next();
+}
+
 /**
  * Authentication Middleware
  * Protects routes with Basic Auth based on password in config
@@ -108,7 +145,7 @@ export function createAuthMiddleware() {
           lockedUntil: now + AUTH_LOCKOUT_MS,
         });
         logger.warn(
-          `[Auth] IP ${ip} locked out after ${attempts} failed attempts`
+          `[Auth] IP ${ip} locked out after ${attempts} failed attempts`,
         );
       } else {
         authAttempts.set(ip, { count: attempts, lockedUntil: 0 });
@@ -132,19 +169,31 @@ export function mountWebUI(app, dirname, getAccountManager) {
   // Serve static files from public directory
   app.use(express.static(path.join(dirname, "../public")));
 
-  // Periodic cleanup of stale OAuth flows (every minute)
+  // Periodic cleanup of stale OAuth flows and rate limits (every minute)
   setInterval(() => {
     const now = Date.now();
-    let cleaned = 0;
+    let cleanedFlows = 0;
     for (const [key, val] of pendingOAuthFlows.entries()) {
       if (now - val.timestamp > 10 * 60 * 1000) {
         // 10 minutes
         pendingOAuthFlows.delete(key);
-        cleaned++;
+        cleanedFlows++;
       }
     }
-    if (cleaned > 0) {
-      logger.debug(`[WebUI] Cleaned up ${cleaned} stale OAuth flows`);
+
+    // Clean up expired rate limit records
+    let cleanedLimits = 0;
+    for (const [ip, record] of oauthAttempts.entries()) {
+      if (now > record.resetAt) {
+        oauthAttempts.delete(ip);
+        cleanedLimits++;
+      }
+    }
+
+    if (cleanedFlows > 0 || cleanedLimits > 0) {
+      logger.debug(
+        `[WebUI] Cleanup: ${cleanedFlows} stale flows, ${cleanedLimits} expired rate limits`,
+      );
     }
   }, 60000);
 
@@ -454,6 +503,54 @@ export function mountWebUI(app, dirname, getAccountManager) {
   });
 
   /**
+   * POST /api/config/token - Set/clear API auth token
+   * This token is required for /v1/* API access when set
+   */
+  app.post("/api/config/token", (req, res) => {
+    try {
+      const { token } = req.body;
+
+      // Validate input (empty string is allowed to clear token)
+      if (token !== undefined && typeof token !== "string") {
+        return res.status(400).json({
+          status: "error",
+          error: "Token must be a string",
+        });
+      }
+
+      // Validate token length if provided
+      if (token && token.length > 256) {
+        return res.status(400).json({
+          status: "error",
+          error: "Token must be 256 characters or less",
+        });
+      }
+
+      // Save new token (empty string to clear)
+      const newToken = token || "";
+      const success = saveConfig({ authToken: newToken });
+
+      if (success) {
+        // Update in-memory config
+        config.authToken = newToken;
+        logger.info(`[WebUI] Auth token ${newToken ? "updated" : "cleared"}`);
+        res.json({
+          status: "ok",
+          message: newToken
+            ? "API auth token set successfully"
+            : "API auth token cleared",
+          hasToken: !!newToken,
+        });
+      } else {
+        throw new Error("Failed to save token to config file");
+      }
+    } catch (error) {
+      logger.error("[WebUI] Error setting auth token:", error);
+      res.status(500).json({ status: "error", error: error.message });
+    }
+  });
+
+  /**
    * GET /api/settings - Get runtime settings
    */
   app.get("/api/settings", async (req, res) => {
@@ -549,7 +646,7 @@ export function mountWebUI(app, dirname, getAccountManager) {
       const newConfig = await replaceClaudeConfig(claudeConfig);
 
       logger.info(
-        `[WebUI] Restored Claude CLI config to defaults at ${getClaudeConfigPath()}`
+        `[WebUI] Restored Claude CLI config to defaults at ${getClaudeConfigPath()}`,
       );
 
       res.json({
@@ -754,7 +851,7 @@ export function mountWebUI(app, dirname, getAccountManager) {
    * Uses CLI's OAuth flow (localhost:51121) instead of WebUI's port
    * to match Google OAuth Console's authorized redirect URIs
    */
-  app.get("/api/auth/url", async (req, res) => {
+  app.get("/api/auth/url", checkOAuthRateLimit, async (req, res) => {
     try {
       // Clean up old flows (> 10 mins)
       const now = Date.now();
@@ -794,7 +891,7 @@ export function mountWebUI(app, dirname, getAccountManager) {
             });
 
             logger.success(
-              `[WebUI] Account ${accountData.email} added successfully`
+              `[WebUI] Account ${accountData.email} added successfully`,
             );
           } catch (err) {
             logger.error("[WebUI] OAuth flow completion error:", err);

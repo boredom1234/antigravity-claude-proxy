@@ -115,9 +115,13 @@ app.use(
 app.use(contentTypeMiddleware);
 
 // API Key authentication middleware for /v1/* endpoints
+// Priority: authToken > apiKey (authToken is preferred for Claude CLI compatibility)
 app.use("/v1", (req, res, next) => {
-  // Skip validation if apiKey is not configured
-  if (!config.apiKey) {
+  // Determine which token to validate against (authToken preferred, apiKey fallback)
+  const requiredToken = config.authToken || config.apiKey;
+
+  // Skip validation if neither token is configured
+  if (!requiredToken) {
     return next();
   }
 
@@ -131,7 +135,7 @@ app.use("/v1", (req, res, next) => {
     providedKey = xApiKey;
   }
 
-  if (!providedKey || providedKey !== config.apiKey) {
+  if (!providedKey || providedKey !== requiredToken) {
     logger.warn(`[API] Unauthorized request from ${req.ip}, invalid API key`);
     return res.status(401).json({
       type: "error",

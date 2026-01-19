@@ -30,7 +30,7 @@ window.Components.serverConfig = () => ({
       const { response, newPassword } = await window.utils.request(
         "/api/config",
         {},
-        password
+        password,
       );
       if (newPassword) Alpine.store("global").webuiPassword = newPassword;
 
@@ -68,6 +68,91 @@ window.Components.serverConfig = () => ({
     };
   },
 
+  // Auth Token management
+  authTokenDialog: {
+    show: false,
+    newToken: "",
+  },
+
+  showAuthTokenDialog() {
+    this.authTokenDialog = {
+      show: true,
+      newToken: "",
+    };
+  },
+
+  hideAuthTokenDialog() {
+    this.authTokenDialog = {
+      show: false,
+      newToken: "",
+    };
+  },
+
+  async saveAuthToken() {
+    const store = Alpine.store("global");
+    const { newToken } = this.authTokenDialog;
+
+    try {
+      const { response, newPassword } = await window.utils.request(
+        "/api/config/token",
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ token: newToken }),
+        },
+        store.webuiPassword,
+      );
+
+      if (newPassword) store.webuiPassword = newPassword;
+
+      const data = await response.json();
+      if (data.status === "ok") {
+        store.showToast(data.message, "success");
+        this.hideAuthTokenDialog();
+        await this.fetchServerConfig();
+      } else {
+        throw new Error(data.error || "Failed to set auth token");
+      }
+    } catch (e) {
+      store.showToast("Failed to set auth token: " + e.message, "error");
+    }
+  },
+
+  async clearAuthToken() {
+    const store = Alpine.store("global");
+    if (
+      !confirm(
+        "Clear the API auth token? This will allow unauthenticated API access.",
+      )
+    ) {
+      return;
+    }
+
+    try {
+      const { response, newPassword } = await window.utils.request(
+        "/api/config/token",
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ token: "" }),
+        },
+        store.webuiPassword,
+      );
+
+      if (newPassword) store.webuiPassword = newPassword;
+
+      const data = await response.json();
+      if (data.status === "ok") {
+        store.showToast("API auth token cleared", "success");
+        await this.fetchServerConfig();
+      } else {
+        throw new Error(data.error || "Failed to clear auth token");
+      }
+    } catch (e) {
+      store.showToast("Failed to clear auth token: " + e.message, "error");
+    }
+  },
+
   async changePassword() {
     const store = Alpine.store("global");
     const { oldPassword, newPassword, confirmPassword } = this.passwordDialog;
@@ -89,7 +174,7 @@ window.Components.serverConfig = () => ({
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ oldPassword, newPassword }),
         },
-        store.webuiPassword
+        store.webuiPassword,
       );
 
       if (!response.ok) {
@@ -122,7 +207,7 @@ window.Components.serverConfig = () => ({
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ debug: enabled }),
         },
-        store.webuiPassword
+        store.webuiPassword,
       );
 
       if (newPassword) store.webuiPassword = newPassword;
@@ -158,7 +243,7 @@ window.Components.serverConfig = () => ({
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ persistTokenCache: enabled }),
         },
-        store.webuiPassword
+        store.webuiPassword,
       );
 
       if (newPassword) store.webuiPassword = newPassword;
@@ -217,7 +302,7 @@ window.Components.serverConfig = () => ({
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify(payload),
           },
-          store.webuiPassword
+          store.webuiPassword,
         );
 
         if (newPassword) store.webuiPassword = newPassword;
@@ -234,7 +319,7 @@ window.Components.serverConfig = () => ({
         this.serverConfig[fieldName] = previousValue;
         store.showToast(
           `Failed to update ${displayName}: ` + e.message,
-          "error"
+          "error",
         );
       }
     }, window.AppConstants.INTERVALS.CONFIG_DEBOUNCE);
@@ -248,8 +333,8 @@ window.Components.serverConfig = () => ({
         v,
         MAX_RETRIES_MIN,
         MAX_RETRIES_MAX,
-        "Max Retries"
-      )
+        "Max Retries",
+      ),
     );
   },
 
@@ -261,8 +346,8 @@ window.Components.serverConfig = () => ({
         v,
         RETRY_BASE_MS_MIN,
         RETRY_BASE_MS_MAX,
-        "Retry Base Delay"
-      )
+        "Retry Base Delay",
+      ),
     );
   },
 
@@ -274,8 +359,8 @@ window.Components.serverConfig = () => ({
         v,
         RETRY_MAX_MS_MIN,
         RETRY_MAX_MS_MAX,
-        "Retry Max Delay"
-      )
+        "Retry Max Delay",
+      ),
     );
   },
 
@@ -286,8 +371,8 @@ window.Components.serverConfig = () => ({
       window.Validators.validateTimeout(
         v,
         DEFAULT_COOLDOWN_MIN,
-        DEFAULT_COOLDOWN_MAX
-      )
+        DEFAULT_COOLDOWN_MAX,
+      ),
     );
   },
 
@@ -297,24 +382,20 @@ window.Components.serverConfig = () => ({
       "maxWaitBeforeErrorMs",
       value,
       "Max Wait Threshold",
-      (v) => window.Validators.validateTimeout(v, MAX_WAIT_MIN, MAX_WAIT_MAX)
+      (v) => window.Validators.validateTimeout(v, MAX_WAIT_MIN, MAX_WAIT_MAX),
     );
   },
 
   toggleMaxContextTokens(value) {
     const { MAX_CONTEXT_TOKENS_MIN, MAX_CONTEXT_TOKENS_MAX } =
       window.AppConstants.VALIDATION;
-    this.saveConfigField(
-      "maxContextTokens",
-      value,
-      "Max Context Tokens",
-      (v) =>
-        window.Validators.validateRange(
-          v,
-          MAX_CONTEXT_TOKENS_MIN,
-          MAX_CONTEXT_TOKENS_MAX,
-          "Max Context Tokens"
-        )
+    this.saveConfigField("maxContextTokens", value, "Max Context Tokens", (v) =>
+      window.Validators.validateRange(
+        v,
+        MAX_CONTEXT_TOKENS_MIN,
+        MAX_CONTEXT_TOKENS_MAX,
+        "Max Context Tokens",
+      ),
     );
   },
 
@@ -331,7 +412,7 @@ window.Components.serverConfig = () => ({
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ geminiHeaderMode: mode }),
         },
-        store.webuiPassword
+        store.webuiPassword,
       );
 
       if (newPassword) store.webuiPassword = newPassword;
@@ -357,7 +438,7 @@ window.Components.serverConfig = () => ({
       const { response, newPassword } = await window.utils.request(
         "/refresh-token",
         { method: "POST" },
-        store.webuiPassword
+        store.webuiPassword,
       );
 
       if (newPassword) store.webuiPassword = newPassword;

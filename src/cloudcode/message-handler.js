@@ -9,6 +9,7 @@ import {
   getEndpointsForHeaderMode,
   MAX_RETRIES,
   MAX_WAIT_BEFORE_ERROR_MS,
+  ABSOLUTE_MAX_WAIT_MS,
   isThinkingModel,
   getModelFamily,
   ANTIGRAVITY_ENDPOINT_FALLBACKS,
@@ -104,8 +105,11 @@ export async function sendMessage(
         const resetTime = new Date(Date.now() + allWaitMs).toISOString();
 
         // Always wait unless configured max is exceeded AND infinite mode is off
-        const shouldWait =
-          config.infiniteRetryMode || allWaitMs <= MAX_WAIT_BEFORE_ERROR_MS;
+        // Safety: Cap infinite retry mode at ABSOLUTE_MAX_WAIT_MS (1 hour)
+        const cappedWaitMs = Math.min(allWaitMs, ABSOLUTE_MAX_WAIT_MS);
+        const shouldWait = config.infiniteRetryMode
+          ? allWaitMs <= ABSOLUTE_MAX_WAIT_MS
+          : allWaitMs <= MAX_WAIT_BEFORE_ERROR_MS;
 
         if (!shouldWait) {
           throw new RateLimitError(
@@ -117,28 +121,30 @@ export async function sendMessage(
         }
 
         // Wait loop with progress logging
-        const waitCount = Math.ceil(allWaitMs / 10000); // 10s chunks
+        // Use cappedWaitMs for actual wait to respect safety limit
+        const waitTimeMs = config.infiniteRetryMode ? cappedWaitMs : allWaitMs;
+        const waitCount = Math.ceil(waitTimeMs / 10000); // 10s chunks
         const accountCount = accountManager.getAccountCount();
 
         logger.warn(
           `[CloudCode] All ${accountCount} account(s) rate-limited. Waiting ${formatDuration(
-            allWaitMs,
+            waitTimeMs,
           )}...`,
         );
 
         // Track wait time
-        usageStats.trackWait(allWaitMs);
+        usageStats.trackWait(waitTimeMs);
 
         let waited = 0;
         // Wait in chunks to log progress
-        while (waited < allWaitMs) {
-          const chunk = Math.min(10000, allWaitMs - waited);
+        while (waited < waitTimeMs) {
+          const chunk = Math.min(10000, waitTimeMs - waited);
           await sleep(chunk);
           waited += chunk;
 
-          if (waited < allWaitMs) {
+          if (waited < waitTimeMs) {
             logger.info(
-              `[CloudCode] Still waiting... ${formatDuration(allWaitMs - waited)} remaining`,
+              `[CloudCode] Still waiting... ${formatDuration(waitTimeMs - waited)} remaining`,
             );
           }
         }
