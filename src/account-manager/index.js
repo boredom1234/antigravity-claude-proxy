@@ -263,9 +263,16 @@ export class AccountManager {
    * - Session ID has changed (new conversation)
    * @param {string} [modelId] - Optional model ID
    * @param {string} [sessionId] - Optional session ID
+   * @param {string} [quotaType] - Optional quota type
+   * @param {Object} [sessionInfo] - Optional session tracking info
    * @returns {{account: Object|null, waitMs: number}} Account to use and optional wait time
    */
-  pickStickyAccount(modelId = null, sessionId = null, quotaType = null) {
+  pickStickyAccount(
+    modelId = null,
+    sessionId = null,
+    quotaType = null,
+    sessionInfo = null,
+  ) {
     // Manage session map LRU (Least Recently Used) behavior
     // If sessionId is provided and exists, move it to the end (mark as recently used)
     if (sessionId && this.#sessionMap.has(sessionId)) {
@@ -294,6 +301,7 @@ export class AccountManager {
       sessionId,
       this.#sessionMap,
       quotaType,
+      sessionInfo,
     );
 
     this.#currentIndex = newIndex;

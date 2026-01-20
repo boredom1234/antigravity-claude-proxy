@@ -18,8 +18,15 @@ import {
 import { config } from "../config.js";
 import { formatDuration } from "../utils/helpers.js";
 import { logger } from "../utils/logger.js";
-import { clearExpiredLimits, getAvailableAccounts, isAccountRateLimited } from "./rate-limits.js";
-import { shouldBreakStickiness, findBestQuotaAccount } from "./quota-balancer.js";
+import {
+  clearExpiredLimits,
+  getAvailableAccounts,
+  isAccountRateLimited,
+} from "./rate-limits.js";
+import {
+  shouldBreakStickiness,
+  findBestQuotaAccount,
+} from "./quota-balancer.js";
 
 /**
  * Check if an account is usable for a specific model
@@ -33,7 +40,7 @@ function isAccountUsable(account, modelId, quotaType = null) {
 
   if (account.isInvalid) {
     logger.debug(
-      `[AccountManager] Account ${account.email} unusable: Invalid state`
+      `[AccountManager] Account ${account.email} unusable: Invalid state`,
     );
     return false;
   }
@@ -41,7 +48,7 @@ function isAccountUsable(account, modelId, quotaType = null) {
   // WebUI: Skip disabled accounts
   if (account.enabled === false) {
     logger.debug(
-      `[AccountManager] Account ${account.email} unusable: Disabled`
+      `[AccountManager] Account ${account.email} unusable: Disabled`,
     );
     return false;
   }
@@ -49,7 +56,7 @@ function isAccountUsable(account, modelId, quotaType = null) {
   // Check concurrency limit
   if ((account.activeRequests || 0) >= MAX_CONCURRENT_REQUESTS) {
     logger.debug(
-      `[AccountManager] Account ${account.email} unusable: Concurrency limit (${account.activeRequests}/${MAX_CONCURRENT_REQUESTS})`
+      `[AccountManager] Account ${account.email} unusable: Concurrency limit (${account.activeRequests}/${MAX_CONCURRENT_REQUESTS})`,
     );
     return false;
   }
@@ -77,7 +84,7 @@ function isAccountUsable(account, modelId, quotaType = null) {
             account.email
           } unusable: Low quota for ${modelId} (${(
             quota.remainingFraction * 100
-          ).toFixed(1)}% < ${MIN_QUOTA_FRACTION * 100}%)`
+          ).toFixed(1)}% < ${MIN_QUOTA_FRACTION * 100}%)`,
         );
         return false;
       }
@@ -88,10 +95,10 @@ function isAccountUsable(account, modelId, quotaType = null) {
     if (isAccountRateLimited(account, modelId, quotaType)) {
       // Note: isAccountRateLimited already checks expiry, but we log strictly here for debug
       // We need to re-fetch the limit object just for logging reset time if we want detailed logs
-      // But standard logging suggests avoiding redundant lookups. 
+      // But standard logging suggests avoiding redundant lookups.
       // Let's assume isAccountRateLimited returned true accurately.
       logger.debug(
-        `[AccountManager] Account ${account.email} unusable: Rate limited on ${modelId} [${quotaType || 'default'}]`
+        `[AccountManager] Account ${account.email} unusable: Rate limited on ${modelId} [${quotaType || "default"}]`,
       );
       return false;
     }
@@ -110,7 +117,13 @@ function isAccountUsable(account, modelId, quotaType = null) {
  * @param {string} [quotaType] - Optional quota type
  * @returns {{account: Object|null, newIndex: number}} The next available account and new index
  */
-export function pickNext(accounts, currentIndex, onSave, modelId = null, quotaType = null) {
+export function pickNext(
+  accounts,
+  currentIndex,
+  onSave,
+  modelId = null,
+  quotaType = null,
+) {
   clearExpiredLimits(accounts);
 
   const available = getAvailableAccounts(accounts, modelId, quotaType);
@@ -159,7 +172,7 @@ export function getCurrentStickyAccount(
   currentIndex,
   onSave,
   modelId = null,
-  quotaType = null
+  quotaType = null,
 ) {
   clearExpiredLimits(accounts);
 
@@ -199,7 +212,7 @@ export function shouldWaitForCurrentAccount(
   accounts,
   currentIndex,
   modelId = null,
-  quotaType = null
+  quotaType = null,
 ) {
   if (accounts.length === 0) {
     return { shouldWait: false, waitMs: 0, account: null };
@@ -222,14 +235,14 @@ export function shouldWaitForCurrentAccount(
 
   // Check model-specific limit
   if (modelId) {
-     if (isAccountRateLimited(account, modelId, quotaType)) {
-       // Re-calculate basic wait time
-       const key = quotaType ? `${modelId}:${quotaType}` : modelId;
-       const limit = account.modelRateLimits && account.modelRateLimits[key];
-       if (limit && limit.resetTime) {
-         waitMs = limit.resetTime - Date.now();
-       }
-     }
+    if (isAccountRateLimited(account, modelId, quotaType)) {
+      // Re-calculate basic wait time
+      const key = quotaType ? `${modelId}:${quotaType}` : modelId;
+      const limit = account.modelRateLimits && account.modelRateLimits[key];
+      if (limit && limit.resetTime) {
+        waitMs = limit.resetTime - Date.now();
+      }
+    }
   }
 
   // If wait time is within threshold, recommend waiting
@@ -253,6 +266,7 @@ export function shouldWaitForCurrentAccount(
  * @param {string} [sessionId] - Current session ID
  * @param {Map} [sessionMap] - Map of sessionId -> accountEmail
  * @param {string} [quotaType] - Optional quota type
+ * @param {Object} [sessionInfo] - Optional session info for smart rotation
  * @returns {{account: Object|null, waitMs: number, newIndex: number}}
  */
 export function pickStickyAccount(
@@ -262,7 +276,8 @@ export function pickStickyAccount(
   modelId = null,
   sessionId = null,
   sessionMap = null,
-  quotaType = null
+  quotaType = null,
+  sessionInfo = null,
 ) {
   let stickyAccount = null;
   let stickyIndex = -1;
@@ -278,9 +293,20 @@ export function pickStickyAccount(
       if (isAccountUsable(account, modelId, quotaType)) {
         stickyAccount = account;
         stickyIndex = index;
-        // Check if we should break stickiness due to low quota
-        if (stickyAccount && shouldBreakStickiness(stickyAccount, accounts, modelId, quotaType)) {
-          logger.info(`[AccountManager] Breaking stickiness for ${email} due to low quota/imbalance.`);
+        // Check if we should break stickiness due to low quota or session thresholds
+        if (
+          stickyAccount &&
+          shouldBreakStickiness(
+            stickyAccount,
+            accounts,
+            modelId,
+            quotaType,
+            sessionInfo,
+          )
+        ) {
+          logger.info(
+            `[AccountManager] Breaking stickiness for ${email} due to quota/rotation rules.`,
+          );
           stickyAccount = null;
           // Don't delete from map yet, we'll overwrite it if we find a new one
         }
@@ -288,7 +314,7 @@ export function pickStickyAccount(
         // Mapped account is unusable (rate limited/invalid)
         // We must switch.
         logger.info(
-          `[AccountManager] Sticky account ${email} is currently unusable. Falling back to pool.`
+          `[AccountManager] Sticky account ${email} is currently unusable. Falling back to pool.`,
         );
       }
     }
@@ -303,28 +329,27 @@ export function pickStickyAccount(
 
   // 3. Fallback: Pick BEST available account (Quota Aware or Round Robin)
   // This balances load for new sessions or when sticky account fails
-  
-  // Try to find account with best quota first
-  let nextAccount = findBestQuotaAccount(accounts, modelId, quotaType);
+
+  // Try to find account with best quota first (uses weighted scoring)
+  let nextAccount = findBestQuotaAccount(
+    accounts,
+    modelId,
+    quotaType,
+    currentIndex,
+  );
   let newIndex = currentIndex;
-  
+
   // If no "best" found (or all equal), fall back to round robin
   if (!nextAccount) {
-      const result = pickNext(
-        accounts,
-        currentIndex,
-        onSave,
-        modelId,
-        quotaType
-      );
-      nextAccount = result.account;
-      newIndex = result.newIndex;
+    const result = pickNext(accounts, currentIndex, onSave, modelId, quotaType);
+    nextAccount = result.account;
+    newIndex = result.newIndex;
   } else {
-      // Update index to match selected account
-      newIndex = accounts.indexOf(nextAccount);
-      // Update lastUsed
-      nextAccount.lastUsed = Date.now();
-      if (onSave) onSave();
+    // Update index to match selected account
+    newIndex = accounts.indexOf(nextAccount);
+    // Update lastUsed
+    nextAccount.lastUsed = Date.now();
+    if (onSave) onSave();
   }
 
   if (nextAccount) {
@@ -333,7 +358,7 @@ export function pickStickyAccount(
       logger.info(
         `[AccountManager] Assigned session ${sessionId.substring(0, 8)}... to ${
           nextAccount.email
-        }`
+        }`,
       );
     }
     return { account: nextAccount, waitMs: 0, newIndex };
@@ -346,7 +371,12 @@ export function pickStickyAccount(
     const index = accounts.findIndex((a) => a.email === email);
     if (index !== -1) {
       // shouldWaitForCurrentAccount supports global wait
-      const waitInfo = shouldWaitForCurrentAccount(accounts, index, modelId, quotaType);
+      const waitInfo = shouldWaitForCurrentAccount(
+        accounts,
+        index,
+        modelId,
+        quotaType,
+      );
       if (waitInfo.shouldWait) {
         return {
           account: null,
@@ -358,6 +388,11 @@ export function pickStickyAccount(
   }
 
   // Last resort: check global current index wait time
-  const waitInfo = shouldWaitForCurrentAccount(accounts, currentIndex, modelId, quotaType);
+  const waitInfo = shouldWaitForCurrentAccount(
+    accounts,
+    currentIndex,
+    modelId,
+    quotaType,
+  );
   return { account: null, waitMs: waitInfo.waitMs, newIndex: currentIndex };
 }

@@ -155,6 +155,11 @@ export const STICKY_COOLDOWN_THRESHOLD_MS = 15000; // 15 seconds - wait for stic
 export const MAX_CONCURRENT_REQUESTS = config?.maxConcurrentRequests || 5; // Maximum concurrent requests per account
 export const MIN_QUOTA_FRACTION = 0.1; // Minimum remaining quota fraction (10%) before switching accounts
 
+// Smart sticky session configuration
+export const STICKY_MESSAGE_THRESHOLD = config?.stickyMessageThreshold || 20; // Cache benefit for first 20 messages
+export const STICKY_TOKEN_THRESHOLD = config?.stickyTokenThreshold || 200000; // Rotate after 200k tokens
+export const ROTATION_QUOTA_THRESHOLD = config?.rotationQuotaThreshold || 0.3; // Proactive rotation when quota < 30%
+
 // Thinking model constants
 export const MIN_SIGNATURE_LENGTH = 50; // Minimum valid thinking signature length
 

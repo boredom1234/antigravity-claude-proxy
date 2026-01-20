@@ -30,7 +30,11 @@ import { parseResetTime } from "./rate-limit-parser.js";
 import { buildCloudCodeRequest, buildHeaders } from "./request-builder.js";
 import { streamSSEResponse } from "./sse-streamer.js";
 import { getFallbackChain } from "../fallback-config.js";
-import { deriveSessionId } from "./session-manager.js";
+import {
+  deriveSessionId,
+  getSessionInfo,
+  updateSessionUsage,
+} from "./session-manager.js";
 import usageStats from "../modules/usage-stats.js";
 import crypto from "crypto";
 
@@ -54,6 +58,7 @@ export async function* sendMessageStream(
 ) {
   const model = anthropicRequest.model;
   const sessionId = deriveSessionId(anthropicRequest);
+  const sessionInfo = getSessionInfo(sessionId);
 
   // Determine quota type based on header mode
   const modelFamily = getModelFamily(model);
@@ -86,6 +91,7 @@ export async function* sendMessageStream(
       model,
       sessionId,
       quotaType,
+      sessionInfo,
     );
     let account = stickyAccount;
 
@@ -294,6 +300,10 @@ export async function* sendMessageStream(
               if (attempt > 0) {
                 usageStats.trackRetrySuccess();
               }
+              // Update session token usage - we need to estimate or track actuals if streamer provides them
+              // Current streamer implementation doesn't return total tokens easily here
+              // But we can update with 0 just to refresh lastSeen
+              updateSessionUsage(sessionId, 0);
               return;
             } catch (streamError) {
               // Only retry on EmptyResponseError

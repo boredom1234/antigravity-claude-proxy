@@ -28,7 +28,11 @@ import { resetConsecutiveFailures } from "../account-manager/rate-limits.js";
 import { buildCloudCodeRequest, buildHeaders } from "./request-builder.js";
 import { parseThinkingSSEResponse } from "./sse-parser.js";
 import { getFallbackChain } from "../fallback-config.js";
-import { deriveSessionId } from "./session-manager.js";
+import {
+  deriveSessionId,
+  getSessionInfo,
+  updateSessionUsage,
+} from "./session-manager.js";
 import usageStats from "../modules/usage-stats.js";
 
 /**
@@ -52,6 +56,7 @@ export async function sendMessage(
   const model = anthropicRequest.model;
   const isThinking = isThinkingModel(model);
   const sessionId = deriveSessionId(anthropicRequest);
+  const sessionInfo = getSessionInfo(sessionId);
 
   // Determine quota type based on header mode (CLI vs default)
   // We only use 'cli' quota type for Gemini models in CLI mode
@@ -85,6 +90,7 @@ export async function sendMessage(
       model,
       sessionId,
       quotaType,
+      sessionInfo,
     );
     let account = stickyAccount;
 
@@ -350,6 +356,14 @@ export async function sendMessage(
           }
           // On success, reset consecutive failures
           resetConsecutiveFailures(account, model);
+
+          // Update session token usage for rotation tracking
+          if (result.usage) {
+            const totalTokens =
+              (result.usage.input_tokens || 0) +
+              (result.usage.output_tokens || 0);
+            updateSessionUsage(sessionId, totalTokens);
+          }
 
           return result;
         } catch (endpointError) {
