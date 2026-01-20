@@ -1,6 +1,6 @@
 # Contributor Guide
 
-This guide outlines the development workflow, available scripts, and environment configuration for the Antigravity Claude Proxy project.
+This guide outlines the development workflow, available scripts, and environment configuration for the Antigravity Claude Proxy.
 
 ## Getting Started
 
@@ -78,46 +78,46 @@ The application can be configured via `config.json` in `~/.config/antigravity-pr
 
 | Script | Description |
 |--------|-------------|
-| `npm start` | Start the production server |
-| `npm run dev` | Start development server with file watching |
-| `npm run dev:full` | Start development server + CSS watcher |
-| `npm run build:css` | Build minified CSS |
-| `npm run watch:css` | Watch CSS for changes |
+| `npm start` | node src/index.js |
+| `npm run dev` | node --watch src/index.js |
+| `npm run dev:full` | concurrently "npm run watch:css" "npm run dev" |
+| `npm run build:css` | tailwindcss -i ./public/css/src/input.css -o ./public/css/style.css --minify |
+| `npm run watch:css` | tailwindcss -i ./public/css/src/input.css -o ./public/css/style.css --watch |
 
 ### Account Management
 
 | Script | Description |
 |--------|-------------|
-| `npm run accounts` | Interactive account management CLI |
-| `npm run accounts:add` | Add a new Google account |
-| `npm run accounts:list` | List configured accounts |
-| `npm run accounts:remove` | Remove an account |
-| `npm run accounts:verify` | Verify account tokens |
+| `npm run accounts` | node src/cli/accounts.js |
+| `npm run accounts:add` | node src/cli/accounts.js add |
+| `npm run accounts:list` | node src/cli/accounts.js list |
+| `npm run accounts:remove` | node src/cli/accounts.js remove |
+| `npm run accounts:verify` | node src/cli/accounts.js verify |
 
 ### Stats
 
 | Script | Description |
 |--------|-------------|
-| `npm run stats` | View general usage statistics |
-| `npm run stats:session` | View session-specific stats |
-| `npm run stats:model` | View model usage stats |
-| `npm run stats:limits` | View rate limit stats |
+| `npm run stats` | node src/cli/stats.js |
+| `npm run stats:session` | node src/cli/stats.js session |
+| `npm run stats:model` | node src/cli/stats.js model |
+| `npm run stats:limits` | node src/cli/stats.js limits |
 
 ### Testing
 
 | Script | Description |
 |--------|-------------|
-| `npm test` | Run all tests |
-| `npm run test:signatures` | Test thinking signature handling |
-| `npm run test:multiturn` | Test multi-turn conversations |
-| `npm run test:streaming` | Test streaming SSE events |
-| `npm run test:interleaved` | Test interleaved thinking blocks |
-| `npm run test:images` | Test image processing |
-| `npm run test:caching` | Test prompt caching |
-| `npm run test:crossmodel` | Test cross-model thinking (Claude <-> Gemini) |
-| `npm run test:oauth` | Test OAuth flow (no-browser mode) |
-| `npm run test:emptyretry` | Test retry logic for empty responses |
-| `npm run test:sanitizer` | Test JSON schema sanitization |
+| `npm test` | node tests/run-all.cjs |
+| `npm run test:signatures` | node tests/test-thinking-signatures.cjs |
+| `npm run test:multiturn` | node tests/test-multiturn-thinking-tools.cjs |
+| `npm run test:streaming` | node tests/test-multiturn-thinking-tools-streaming.cjs |
+| `npm run test:interleaved` | node tests/test-interleaved-thinking.cjs |
+| `npm run test:images` | node tests/test-images.cjs |
+| `npm run test:caching` | node tests/test-caching-streaming.cjs |
+| `npm run test:crossmodel` | node tests/test-cross-model-thinking.cjs |
+| `npm run test:oauth` | node tests/test-oauth-no-browser.cjs |
+| `npm run test:emptyretry` | node tests/test-empty-response-retry.cjs |
+| `npm run test:sanitizer` | node tests/test-schema-sanitizer.cjs |
 
 ## Testing Procedures
 
