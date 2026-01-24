@@ -24,6 +24,8 @@ const DEFAULT_CONFIG = {
   waitProgressUpdates: true, // Send SSE events while waiting for rate limits
   aggressiveRetry: true, // Retry more aggressively on transient errors
   modelMapping: {},
+  defaultThinkingLevel: null, // 'minimal', 'low', 'medium', 'high' or null
+  defaultThinkingBudget: 16000, // Default thinking budget in tokens
 };
 
 // Env Var Mapping (Env Name -> Config Key)
@@ -45,6 +47,8 @@ const ENV_MAPPING = {
   AUTO_FALLBACK: "autoFallback",
   WAIT_PROGRESS_UPDATES: "waitProgressUpdates",
   AGGRESSIVE_RETRY: "aggressiveRetry",
+  DEFAULT_THINKING_LEVEL: "defaultThinkingLevel",
+  DEFAULT_THINKING_BUDGET: "defaultThinkingBudget",
 };
 
 // Config locations
@@ -112,6 +116,11 @@ function validateConfig(cfg) {
       max: 50,
       default: DEFAULT_CONFIG.maxConcurrentRequests,
     },
+    defaultThinkingBudget: {
+      min: 0,
+      max: 128000,
+      default: DEFAULT_CONFIG.defaultThinkingBudget,
+    },
   };
 
   for (const [key, range] of Object.entries(numericRanges)) {
@@ -166,6 +175,22 @@ function validateConfig(cfg) {
       }`,
     );
     validated.geminiHeaderMode = DEFAULT_CONFIG.geminiHeaderMode;
+  }
+
+  // Validate thinking level
+  const validThinkingLevels = ["minimal", "low", "medium", "high", null];
+  if (
+    validated.defaultThinkingLevel !== undefined &&
+    !validThinkingLevels.includes(validated.defaultThinkingLevel)
+  ) {
+    if (validated.defaultThinkingLevel !== null) {
+      warnings.push(
+        `defaultThinkingLevel must be one of ${validThinkingLevels
+          .filter((l) => l !== null)
+          .join(", ")}, got ${validated.defaultThinkingLevel}`,
+      );
+      validated.defaultThinkingLevel = DEFAULT_CONFIG.defaultThinkingLevel;
+    }
   }
 
   // Validate modelMapping is an object

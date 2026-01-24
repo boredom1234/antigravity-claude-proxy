@@ -102,7 +102,8 @@ export function resolveModelForHeaderMode(requestedModel) {
     return {
       actualModel: actualModel + cacheSuffix,
       originalModel: requestedModel,
-      thinkingLevel: tier || (isGemini3 ? "high" : null),
+      thinkingLevel:
+        tier || (isGemini3 ? config.defaultThinkingLevel || "high" : null),
       headerMode,
     };
   }

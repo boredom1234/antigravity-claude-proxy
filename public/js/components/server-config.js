@@ -277,7 +277,10 @@ window.Components.serverConfig = () => ({
       }
       value = validation.value;
     } else {
-      value = parseInt(value);
+      // Only parse as int if it's a numeric string
+      if (typeof value === "string" && /^-?\d+$/.test(value)) {
+        value = parseInt(value, 10);
+      }
     }
 
     // Clear existing timer for this field
@@ -396,6 +399,32 @@ window.Components.serverConfig = () => ({
         MAX_CONTEXT_TOKENS_MAX,
         "Max Context Tokens",
       ),
+    );
+  },
+
+  toggleDefaultThinkingLevel(value) {
+    this.saveConfigField(
+      "defaultThinkingLevel",
+      value,
+      "Default Thinking Level",
+      null,
+    );
+  },
+
+  toggleDefaultThinkingBudget(value) {
+    const { THINKING_BUDGET_MIN, THINKING_BUDGET_MAX } =
+      window.AppConstants.VALIDATION;
+    this.saveConfigField(
+      "defaultThinkingBudget",
+      value,
+      "Default Thinking Budget",
+      (v) =>
+        window.Validators.validateRange(
+          v,
+          THINKING_BUDGET_MIN,
+          THINKING_BUDGET_MAX,
+          "Default Thinking Budget",
+        ),
     );
   },
 

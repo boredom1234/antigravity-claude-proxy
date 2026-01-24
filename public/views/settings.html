@@ -971,6 +971,66 @@
                         <div class="h-px flex-1 bg-space-border/30"></div>
                     </div>
 
+                    <!-- Thinking Settings -->
+                    <div class="view-card border-space-border/50 hover:border-neon-cyan/50">
+                        <div class="flex flex-col gap-4">
+                            <div class="flex items-center gap-3">
+                                <div class="w-10 h-10 rounded bg-neon-cyan/10 flex items-center justify-center text-neon-cyan transition-colors">
+                                    <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z" />
+                                    </svg>
+                                </div>
+                                <div class="flex-1">
+                                    <h4 class="text-sm font-bold text-white mb-0.5">Thinking Settings</h4>
+                                    <p class="text-[11px] text-gray-500">Configure default thinking behavior for supported models.</p>
+                                </div>
+                            </div>
+
+                            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                <!-- Thinking Level -->
+                                <div class="form-control">
+                                    <label class="label pt-0">
+                                        <span class="label-text text-gray-400 text-xs">Default Thinking Level</span>
+                                        <span class="label-text-alt font-mono text-neon-cyan text-xs font-semibold"
+                                            x-text="serverConfig.defaultThinkingLevel || 'high'"></span>
+                                    </label>
+                                    <div class="join w-full grid grid-cols-4">
+                                        <template x-for="level in ['minimal', 'low', 'medium', 'high']">
+                                            <button class="join-item btn btn-xs capitalize"
+                                                :class="serverConfig.defaultThinkingLevel === level || (!serverConfig.defaultThinkingLevel && level === 'high') ? 'btn-primary' : 'btn-ghost'"
+                                                @click="toggleDefaultThinkingLevel(level)"
+                                                x-text="level"></button>
+                                        </template>
+                                    </div>
+                                    <p class="text-[9px] text-gray-600 mt-1 leading-tight">Gemini 3 models only. Higher levels use more reasoning effort.</p>
+                                </div>
+
+                                <!-- Thinking Budget -->
+                                <div class="form-control">
+                                    <label class="label pt-0">
+                                        <span class="label-text text-gray-400 text-xs">Default Thinking Budget</span>
+                                        <span class="label-text-alt font-mono text-neon-cyan text-xs font-semibold"
+                                            x-text="(serverConfig.defaultThinkingBudget || 16000).toLocaleString()"></span>
+                                    </label>
+                                    <div class="flex gap-2 items-center">
+                                        <input type="range" min="0" max="64000" step="1000"
+                                            class="custom-range custom-range-cyan flex-1"
+                                            :value="serverConfig.defaultThinkingBudget || 16000"
+                                            :style="`background-size: ${(serverConfig.defaultThinkingBudget || 16000) / 640}% 100%`"
+                                            @input="toggleDefaultThinkingBudget($event.target.value)"
+                                            aria-label="Default thinking budget slider">
+                                        <input type="number" min="0" max="128000" step="1000"
+                                            class="input input-xs input-bordered w-20 bg-space-800 border-space-border text-white font-mono text-center"
+                                            :value="serverConfig.defaultThinkingBudget || 16000"
+                                            @change="toggleDefaultThinkingBudget($event.target.value)"
+                                            aria-label="Default thinking budget value">
+                                    </div>
+                                    <p class="text-[9px] text-gray-600 mt-1 leading-tight">Max tokens for reasoning (Claude & Gemini).</p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
 
                     <!-- Debug Mode -->
                     <div

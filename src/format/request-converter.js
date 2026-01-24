@@ -115,7 +115,7 @@ export function convertAnthropicToGoogle(anthropicRequest) {
     needsThinkingRecovery(messages)
   ) {
     logger.debug(
-      "[RequestConverter] Applying thinking recovery for Claude (cross-model from Gemini)"
+      "[RequestConverter] Applying thinking recovery for Claude (cross-model from Gemini)",
     );
     processedMessages = closeToolLoopForThinking(messages, "claude");
   }
@@ -131,7 +131,7 @@ export function convertAnthropicToGoogle(anthropicRequest) {
     // Always include system prompt cost in the budget
     if (googleRequest.systemInstruction) {
       const systemTokens = estimateTokens(
-        googleRequest.systemInstruction.parts
+        googleRequest.systemInstruction.parts,
       );
       currentTokens += systemTokens;
     }
@@ -145,7 +145,7 @@ export function convertAnthropicToGoogle(anthropicRequest) {
       // Check if adding this message exceeds the budget
       if (currentTokens + msgTokens > maxContextTokens) {
         logger.warn(
-          `[RequestConverter] Context limit (${maxContextTokens}) reached. Truncating history. Keeping last ${messagesToKeep.length} messages.`
+          `[RequestConverter] Context limit (${maxContextTokens}) reached. Truncating history. Keeping last ${messagesToKeep.length} messages.`,
         );
         break;
       }
@@ -193,7 +193,7 @@ export function convertAnthropicToGoogle(anthropicRequest) {
         if (firstMsgIndex > 0) {
           const prevMsg = processedMessages[firstMsgIndex - 1];
           logger.warn(
-            `[RequestConverter] History starts with assistant (role: ${firstMsg.role}). Prepending preceding ${prevMsg.role} message to maintain conversation flow.`
+            `[RequestConverter] History starts with assistant (role: ${firstMsg.role}). Prepending preceding ${prevMsg.role} message to maintain conversation flow.`,
           );
           messagesToKeep.unshift(prevMsg);
         }
@@ -223,7 +223,7 @@ export function convertAnthropicToGoogle(anthropicRequest) {
 
         if (!hasPrecedingToolUse) {
           logger.warn(
-            `[RequestConverter] Found orphaned tool_result at index ${index}. Converting to text to avoid API error.`
+            `[RequestConverter] Found orphaned tool_result at index ${index}. Converting to text to avoid API error.`,
           );
           // Convert tool_result blocks to text blocks (and preserve images)
           const newContent = msg.content.flatMap((block) => {
@@ -291,7 +291,7 @@ export function convertAnthropicToGoogle(anthropicRequest) {
       msgContent,
       isClaudeModel,
       isGeminiModel,
-      isGptModel
+      isGptModel,
     );
 
     // SAFETY: Google API requires at least one part per content message
@@ -300,7 +300,7 @@ export function convertAnthropicToGoogle(anthropicRequest) {
       // Use '.' instead of '' because claude models reject empty text parts.
       // A single period is invisible in practice but satisfies the API requirement.
       logger.warn(
-        "[RequestConverter] WARNING: Empty parts array after filtering, adding placeholder"
+        "[RequestConverter] WARNING: Empty parts array after filtering, adding placeholder",
       );
       parts.push({ text: "." });
     }
@@ -315,7 +315,7 @@ export function convertAnthropicToGoogle(anthropicRequest) {
   // Filter unsigned thinking blocks for Claude models
   if (isClaudeModel) {
     googleRequest.contents = filterUnsignedThinkingBlocks(
-      googleRequest.contents
+      googleRequest.contents,
     );
   }
 
@@ -344,12 +344,13 @@ export function convertAnthropicToGoogle(anthropicRequest) {
         include_thoughts: true,
       };
 
-      // Only set thinking_budget if explicitly provided
-      const thinkingBudget = thinking?.budget_tokens;
+      // Use provided budget or fall back to global default
+      const thinkingBudget =
+        thinking?.budget_tokens || config.defaultThinkingBudget;
       if (thinkingBudget) {
         thinkingConfig.thinking_budget = thinkingBudget;
         logger.debug(
-          `[RequestConverter] Claude thinking enabled with budget: ${thinkingBudget}`
+          `[RequestConverter] Claude thinking enabled with budget: ${thinkingBudget}`,
         );
 
         // Validate max_tokens > thinking_budget as required by the API
@@ -359,13 +360,13 @@ export function convertAnthropicToGoogle(anthropicRequest) {
           // Default to budget + 8192 (standard output buffer)
           const adjustedMaxTokens = thinkingBudget + 8192;
           logger.warn(
-            `[RequestConverter] max_tokens (${currentMaxTokens}) <= thinking_budget (${thinkingBudget}). Adjusting to ${adjustedMaxTokens} to satisfy API requirements`
+            `[RequestConverter] max_tokens (${currentMaxTokens}) <= thinking_budget (${thinkingBudget}). Adjusting to ${adjustedMaxTokens} to satisfy API requirements`,
           );
           googleRequest.generationConfig.maxOutputTokens = adjustedMaxTokens;
         }
       } else {
         logger.debug(
-          "[RequestConverter] Claude thinking enabled (no budget specified)"
+          "[RequestConverter] Claude thinking enabled (no budget specified)",
         );
       }
 
@@ -374,10 +375,11 @@ export function convertAnthropicToGoogle(anthropicRequest) {
       // Gemini thinking config (uses camelCase)
       const thinkingConfig = {
         includeThoughts: true,
-        thinkingBudget: thinking?.budget_tokens || 16000,
+        thinkingBudget:
+          thinking?.budget_tokens || config.defaultThinkingBudget || 16000,
       };
       logger.debug(
-        `[RequestConverter] Gemini thinking enabled with budget: ${thinkingConfig.thinkingBudget}`
+        `[RequestConverter] Gemini thinking enabled with budget: ${thinkingConfig.thinkingBudget}`,
       );
 
       googleRequest.generationConfig.thinkingConfig = thinkingConfig;
@@ -437,8 +439,8 @@ export function convertAnthropicToGoogle(anthropicRequest) {
 
     logger.debug(
       `[RequestConverter] Tools: ${JSON.stringify(
-        googleRequest.tools
-      ).substring(0, 300)}`
+        googleRequest.tools,
+      ).substring(0, 300)}`,
     );
   }
 
@@ -448,7 +450,7 @@ export function convertAnthropicToGoogle(anthropicRequest) {
     googleRequest.generationConfig.maxOutputTokens > GEMINI_MAX_OUTPUT_TOKENS
   ) {
     logger.debug(
-      `[RequestConverter] Capping Gemini max_tokens from ${googleRequest.generationConfig.maxOutputTokens} to ${GEMINI_MAX_OUTPUT_TOKENS}`
+      `[RequestConverter] Capping Gemini max_tokens from ${googleRequest.generationConfig.maxOutputTokens} to ${GEMINI_MAX_OUTPUT_TOKENS}`,
     );
     googleRequest.generationConfig.maxOutputTokens = GEMINI_MAX_OUTPUT_TOKENS;
   }

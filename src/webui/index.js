@@ -364,6 +364,8 @@ export function mountWebUI(app, dirname, getAccountManager) {
         maxWaitBeforeErrorMs,
         geminiHeaderMode,
         maxContextTokens,
+        defaultThinkingLevel,
+        defaultThinkingBudget,
       } = req.body;
 
       // Only allow updating specific fields (security)
@@ -423,6 +425,19 @@ export function mountWebUI(app, dirname, getAccountManager) {
       ) {
         updates.maxContextTokens = maxContextTokens;
       }
+      if (
+        defaultThinkingLevel === null ||
+        ["minimal", "low", "medium", "high"].includes(defaultThinkingLevel)
+      ) {
+        updates.defaultThinkingLevel = defaultThinkingLevel;
+      }
+      if (
+        typeof defaultThinkingBudget === "number" &&
+        defaultThinkingBudget >= 0 &&
+        defaultThinkingBudget <= 128000
+      ) {
+        updates.defaultThinkingBudget = defaultThinkingBudget;
+      }
 
       if (Object.keys(updates).length === 0) {
         return res.status(400).json({
@@ -446,6 +461,8 @@ export function mountWebUI(app, dirname, getAccountManager) {
             retryMaxMs: config.retryMaxMs,
             maxContextTokens: config.maxContextTokens,
             geminiHeaderMode: config.geminiHeaderMode,
+            defaultThinkingLevel: config.defaultThinkingLevel,
+            defaultThinkingBudget: config.defaultThinkingBudget,
           },
         });
       } else {
