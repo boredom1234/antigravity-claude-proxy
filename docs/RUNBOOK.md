@@ -8,128 +8,106 @@ This runbook details operational procedures, deployment, monitoring, and trouble
 
 - **OS**: Linux, macOS, or Windows
 - **Runtime**: Node.js >= 18.0.0
-- **Network**: Port 8672 (default) open for incoming traffic from Claude CLI
+- **Storage**: ~50MB for application + SQLite database
+- **Network**: Port 8672 (default) must be accessible by your Claude CLI or client.
 
 ### Starting the Service
 
-Standard start:
-```bash
-npm start
-```
+The proxy can be started with several flags to modify behavior:
 
-With model fallback enabled (recommended for high availability):
-```bash
-npm start -- --fallback
-```
+| Command | Description |
+|---------|-------------|
+| `npm start` | Standard start on port 8672 |
+| `npm start -- --fallback` | Start with automatic model fallback enabled |
+| `npm start -- --debug` | Start with verbose debug logging enabled |
+| `PORT=9000 npm start` | Start on a custom port |
 
-With debug logging:
-```bash
-npm start -- --debug
-```
+### Configuration Precedence
 
-### Docker (Optional)
-
-If a Dockerfile is present/added:
-```bash
-docker build -t antigravity-proxy .
-docker run -p 8672:8672 -v ~/.config/antigravity-proxy:/root/.config/antigravity-proxy antigravity-proxy
-```
+The proxy loads configuration in the following order (later stages override earlier ones):
+1. **Hardcoded Defaults**: Defined in `src/config.js`.
+2. **File Config**: `~/.config/antigravity-proxy/config.json` (or `./config.json` in project root).
+3. **Environment Variables**: e.g., `AUTH_TOKEN`, `WEBUI_PASSWORD`.
+4. **CLI Flags**: `--debug`, `--fallback`.
 
 ## Monitoring
 
 ### Web Dashboard
 
-The service includes a built-in Web UI for monitoring status, accounts, and logs.
+Access the management interface at `http://localhost:8672` (or your configured port).
 
-- **URL**: `http://localhost:8672`
-- **Features**:
-  - Real-time request logging
-  - Account quota usage and subscription tiers
-  - Active model configuration
-  - System health status
+- **Dashboard**: Real-time stats on request volume and model distribution.
+- **Accounts**: Monitor quota usage (`remainingFraction`), subscription tiers (Ultra/Pro/Free), and account validity.
+- **Logs**: Live stream of server logs via SSE.
+- **Settings**: Hot-reloadable configuration for the proxy and Claude CLI.
 
-### Logs
+### Health Checks
 
-Logs are output to stdout/stderr.
-
-- **Info**: Normal operation, request summaries.
-- **Warn**: Rate limits, temporary failures, fallback triggers.
-- **Error**: Critical failures, authentication errors, configuration issues.
-
-To view logs in real-time via CLI:
-```bash
-npm start | grep -v "Heartbeat"
-```
+The proxy provides a health endpoint:
+- **URL**: `http://localhost:8672/health`
+- **Response**: `{"status":"ok","version":"1.2.6"}`
 
 ## Operational Procedures
 
-### Adding Accounts
+### Account Management
 
-1. Navigate to the Web UI Accounts tab, OR
-2. Run the CLI command:
-   ```bash
-   npm run accounts:add
-   ```
-3. Follow the OAuth flow in the browser.
+**Adding Accounts**:
+- **WebUI**: Click "Add Account" and follow the OAuth popup.
+- **CLI**: Run `npm run accounts:add`. Use `--no-browser` if running on a headless server.
 
-### Rotating Secrets
-
-If `OAUTH_CLIENT_SECRET` or `WEBUI_PASSWORD` needs rotation:
-1. Update the environment variables or `.env` file.
-2. Restart the service.
+**Verifying Status**:
+Run `npm run accounts:verify` to check if all refresh tokens are still valid and projects are accessible.
 
 ### Handling Rate Limits
 
-The proxy handles rate limits automatically by:
-1. Identifying the specific model limit reached.
-2. Checking other configured accounts for available quota.
-3. Switching to a fallback model if configured (`--fallback`).
-4. Queuing requests if `INFINITE_RETRY_MODE` is enabled.
-
-**Manual Intervention**:
-- Add more accounts via `npm run accounts:add`.
-- Enable fallback models if not already active.
+The proxy implements several strategies to mitigate rate limits:
+1. **Sticky Sessions**: Keeps a conversation on the same account as long as possible to maximize prompt caching.
+2. **Quota Balancing**: Automatically switches accounts if the current one falls below 10% remaining quota.
+3. **Model Fallback**: If all accounts are exhausted for `claude-3-5-sonnet`, it can automatically switch to `claude-3-5-haiku` (if `--fallback` is used).
+4. **Wait Queuing**: If `INFINITE_RETRY_MODE` is enabled, requests will hang and wait for the next available quota reset instead of erroring.
 
 ## Common Issues & Troubleshooting
 
-### 1. Build Failures (Native Modules)
+### 1. Native Module Mismatch (SQLite)
 
-**Symptom**: `better-sqlite3` or other native modules fail to load after Node.js update.
-**Fix**:
-The proxy has an auto-rebuild feature. If that fails:
-```bash
-rm -rf node_modules
-npm install
-```
+**Symptom**: `Error: The module 'better-sqlite3.node' was compiled against a different Node.js version`.
 
-### 2. OAuth Authentication Failures
+**Resolution**:
+The proxy includes a `native-module-helper` that attempts to auto-rebuild on startup. If this fails:
+1. Ensure `python` and `build-essential` (Linux) or `Visual Studio Build Tools` (Windows) are installed.
+2. Run `npm rebuild better-sqlite3`.
+3. If still failing, delete `node_modules` and run `npm install`.
 
-**Symptom**: "Invalid Grant" or "Token Expired" errors in logs.
-**Fix**:
-- Run `npm run accounts:verify` to check status.
-- Remove invalid accounts: `npm run accounts:remove`.
-- Re-add the account to generate new refresh tokens.
+### 2. OAuth "Invalid Grant"
 
-### 3. "Model Not Found" or "404"
+**Symptom**: Accounts marked as `invalid` with "Invalid Grant" reason.
 
-**Symptom**: API returns 404 for a specific model.
-**Fix**:
-- Verify the model name is correct in `src/constants.js`.
-- Check if the account has access to the model (Tier restrictions).
-- Verify `GEMINI_HEADER_MODE` matches the target environment (`cli` vs `antigravity`).
+**Resolution**:
+This usually happens if the refresh token was revoked or expired.
+1. Remove the account: `npm run accounts:remove`.
+2. Re-add the account: `npm run accounts:add`.
 
-### 4. High Latency / Stalls
+### 3. High Latency in Streaming
 
-**Symptom**: Requests hang for long periods.
-**Fix**:
-- Check `MAX_WAIT_BEFORE_ERROR_MS` configuration.
-- Check if `INFINITE_RETRY_MODE` is enabled (requests may queue indefinitely).
-- Check network connectivity to `googleapis.com`.
+**Symptom**: "Thinking" blocks take a long time to appear or the connection drops.
+
+**Resolution**:
+- Check if the account is being rate-limited (logs will show "Rate limit reached, waiting...").
+- Increase `MAX_WAIT_BEFORE_ERROR_MS` if your accounts have low RPM.
+- Verify network connectivity to `*.googleapis.com`.
+
+### 4. Port 8672 Already in Use
+
+**Symptom**: `Error: listen EADDRINUSE: address already in use :::8672`.
+
+**Resolution**:
+- Identify the process: `lsof -i :8672` (Mac/Linux) or `netstat -ano | findstr :8672` (Windows).
+- Kill the process or change the port using the `PORT` environment variable.
 
 ## Rollback Procedure
 
-If a new deployment fails:
-1. Stop the current process (`Ctrl+C`).
-2. Checkout the previous stable git tag/commit.
-3. Run `npm install` to restore dependencies.
-4. Start the service: `npm start`.
+If a deployment causes instability:
+1. Stop the process.
+2. Revert to previous version: `git checkout v1.2.5` (or previous stable commit).
+3. Clean and reinstall: `rm -rf node_modules && npm install`.
+4. Restart: `npm start`.
