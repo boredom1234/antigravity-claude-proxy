@@ -155,6 +155,16 @@ export const STICKY_COOLDOWN_THRESHOLD_MS = 15000; // 15 seconds - wait for stic
 export const MAX_CONCURRENT_REQUESTS = config?.maxConcurrentRequests || 5; // Maximum concurrent requests per account
 export const MIN_QUOTA_FRACTION = 0.1; // Minimum remaining quota fraction (10%) before switching accounts
 
+// Rate limit deduplication - prevents thundering herd on concurrent rate limits
+export const RATE_LIMIT_DEDUP_WINDOW_MS = 2000; // 2 seconds - ignore duplicate 429s within this window
+export const RATE_LIMIT_STATE_RESET_MS = 120000; // 2 minutes - reset consecutive429 count after inactivity
+export const FIRST_RETRY_DELAY_MS = 1000; // Quick 1s retry on first 429
+export const SWITCH_ACCOUNT_DELAY_MS = 500; // Brief delay before switching accounts
+
+// Capacity exhaustion handling - progressive backoff for model capacity issues
+export const CAPACITY_BACKOFF_TIERS_MS = [2000, 5000, 10000, 20000, 30000]; // Progressive backoff tiers
+export const MAX_CAPACITY_RETRIES = 5; // Max retries for capacity exhaustion before switching accounts
+
 // Smart sticky session configuration
 export const STICKY_MESSAGE_THRESHOLD = config?.stickyMessageThreshold || 20; // Cache benefit for first 20 messages
 export const STICKY_TOKEN_THRESHOLD = config?.stickyTokenThreshold || 200000; // Rotate after 200k tokens
@@ -226,6 +236,12 @@ export function isThinkingModel(modelName) {
 
 // Google OAuth configuration (from opencode-antigravity-auth)
 // Client ID and Secret can be overridden via environment variables
+// OAuth callback port - configurable via environment variable for Windows compatibility
+// Windows may reserve ports in range 49152-65535 for Hyper-V/WSL2/Docker, causing EACCES errors
+const OAUTH_CALLBACK_PORT =
+  parseInt(process.env.OAUTH_CALLBACK_PORT, 10) || 51121;
+const OAUTH_CALLBACK_FALLBACK_PORTS = [51122, 51123, 51124, 51125, 51126];
+
 export const OAUTH_CONFIG = {
   clientId:
     process.env.OAUTH_CLIENT_ID ||
@@ -235,7 +251,8 @@ export const OAUTH_CONFIG = {
   authUrl: "https://accounts.google.com/o/oauth2/v2/auth",
   tokenUrl: "https://oauth2.googleapis.com/token",
   userInfoUrl: "https://www.googleapis.com/oauth2/v1/userinfo",
-  callbackPort: parseInt(process.env.OAUTH_CALLBACK_PORT) || 51121,
+  callbackPort: OAUTH_CALLBACK_PORT,
+  callbackFallbackPorts: OAUTH_CALLBACK_FALLBACK_PORTS,
   scopes: [
     "https://www.googleapis.com/auth/cloud-platform",
     "https://www.googleapis.com/auth/userinfo.email",

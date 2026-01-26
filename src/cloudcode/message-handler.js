@@ -17,6 +17,11 @@ import {
   RETRY_DELAY_MS,
   RATE_LIMIT_BUFFER_MS,
   NETWORK_ERROR_DELAY_MS,
+  RATE_LIMIT_DEDUP_WINDOW_MS,
+  RATE_LIMIT_STATE_RESET_MS,
+  FIRST_RETRY_DELAY_MS,
+  CAPACITY_BACKOFF_TIERS_MS,
+  MAX_CAPACITY_RETRIES,
 } from "../constants.js";
 import { config } from "../config.js";
 import { convertGoogleToAnthropic } from "../format/index.js";
@@ -34,6 +39,73 @@ import {
   updateSessionUsage,
 } from "./session-manager.js";
 import usageStats from "../modules/usage-stats.js";
+import {
+  isPermanentAuthFailure,
+  isModelCapacityExhausted,
+  parseRateLimitReason,
+  RateLimitReason,
+} from "../utils/error-detection.js";
+
+/**
+ * Rate limit deduplication state management (shared with streaming handler pattern)
+ */
+const rateLimitStateByAccountModel = new Map();
+
+function getDedupKey(email, model) {
+  return `${email}:${model}`;
+}
+
+function getRateLimitBackoff(email, model, serverRetryAfterMs) {
+  const now = Date.now();
+  const stateKey = getDedupKey(email, model);
+  const previous = rateLimitStateByAccountModel.get(stateKey);
+
+  if (previous && now - previous.lastAt < RATE_LIMIT_DEDUP_WINDOW_MS) {
+    const baseDelay = serverRetryAfterMs ?? FIRST_RETRY_DELAY_MS;
+    const backoffDelay = Math.min(
+      baseDelay * Math.pow(2, previous.consecutive429 - 1),
+      60000,
+    );
+    return {
+      attempt: previous.consecutive429,
+      delayMs: Math.max(baseDelay, backoffDelay),
+      isDuplicate: true,
+    };
+  }
+
+  const attempt =
+    previous && now - previous.lastAt < RATE_LIMIT_STATE_RESET_MS
+      ? previous.consecutive429 + 1
+      : 1;
+
+  rateLimitStateByAccountModel.set(stateKey, {
+    consecutive429: attempt,
+    lastAt: now,
+  });
+
+  const baseDelay = serverRetryAfterMs ?? FIRST_RETRY_DELAY_MS;
+  const backoffDelay = Math.min(baseDelay * Math.pow(2, attempt - 1), 60000);
+
+  return {
+    attempt,
+    delayMs: Math.max(baseDelay, backoffDelay),
+    isDuplicate: false,
+  };
+}
+
+function clearRateLimitState(email, model) {
+  rateLimitStateByAccountModel.delete(getDedupKey(email, model));
+}
+
+// Cleanup stale entries every 60 seconds
+setInterval(() => {
+  const cutoff = Date.now() - RATE_LIMIT_STATE_RESET_MS;
+  for (const [key, state] of rateLimitStateByAccountModel.entries()) {
+    if (state.lastAt < cutoff) {
+      rateLimitStateByAccountModel.delete(key);
+    }
+  }
+}, 60000);
 
 /**
  * Send a non-streaming request to Cloud Code with multi-account support
@@ -254,7 +326,19 @@ export async function sendMessage(
             );
 
             if (response.status === 401) {
-              // Auth error - clear caches and retry with fresh token
+              // Check for permanent auth failures first
+              if (isPermanentAuthFailure(errorText)) {
+                logger.error(
+                  `[CloudCode] Permanent auth failure for ${account.email}: ${errorText.substring(0, 100)}`,
+                );
+                accountManager.markInvalid(
+                  account.email,
+                  "Token revoked - re-authentication required",
+                );
+                throw new Error(`AUTH_INVALID_PERMANENT: ${errorText}`);
+              }
+
+              // Transient auth error - clear caches and retry with fresh token
               logger.warn("[CloudCode] Auth error, refreshing token...");
               accountManager.clearTokenCache(account.email);
               accountManager.clearProjectCache(account.email);
@@ -262,17 +346,70 @@ export async function sendMessage(
             }
 
             if (response.status === 429) {
+              const resetMs = parseResetTime(response, errorText);
+
+              // Check if this is a model capacity issue (server-side, affects all users)
+              if (isModelCapacityExhausted(errorText)) {
+                if (!lastError?.capacityRetryCount) {
+                  lastError = {
+                    is429: true,
+                    response,
+                    errorText,
+                    resetMs,
+                    capacityRetryCount: 0,
+                    isCapacity: true,
+                  };
+                }
+
+                if (lastError.capacityRetryCount < MAX_CAPACITY_RETRIES) {
+                  const tierIndex = Math.min(
+                    lastError.capacityRetryCount,
+                    CAPACITY_BACKOFF_TIERS_MS.length - 1,
+                  );
+                  const backoffMs = CAPACITY_BACKOFF_TIERS_MS[tierIndex];
+                  lastError.capacityRetryCount++;
+
+                  logger.info(
+                    `[CloudCode] Model capacity exhausted, retry ${lastError.capacityRetryCount}/${MAX_CAPACITY_RETRIES} after ${formatDuration(backoffMs)}...`,
+                  );
+                  await sleep(backoffMs);
+                  continue;
+                }
+                logger.warn(
+                  `[CloudCode] Max capacity retries (${MAX_CAPACITY_RETRIES}) exceeded, treating as rate limit`,
+                );
+              }
+
+              // Get deduplication info
+              const backoff = getRateLimitBackoff(
+                account.email,
+                model,
+                resetMs,
+              );
+
+              if (backoff.isDuplicate) {
+                logger.debug(
+                  `[CloudCode] Rate limit duplicate for ${account.email}, skipping...`,
+                );
+              }
+
               // Rate limited on this endpoint - try next endpoint first (DAILY → PROD)
               logger.debug(
-                `[CloudCode] Rate limited at ${endpoint}, trying next endpoint...`,
+                `[CloudCode] Rate limited at ${endpoint} (attempt ${backoff.attempt}), trying next endpoint...`,
               );
-              const resetMs = parseResetTime(response, errorText);
+
               // Keep minimum reset time across all 429 responses
               if (
                 !lastError?.is429 ||
                 (resetMs && (!lastError.resetMs || resetMs < lastError.resetMs))
               ) {
-                lastError = { is429: true, response, errorText, resetMs };
+                lastError = {
+                  is429: true,
+                  response,
+                  errorText,
+                  resetMs,
+                  attempt: backoff.attempt,
+                };
               }
               continue;
             }
@@ -326,6 +463,8 @@ export async function sendMessage(
             if (attempt > 0) {
               usageStats.trackRetrySuccess();
             }
+            // Clear rate limit deduplication state on success
+            clearRateLimitState(account.email, model);
             // On success, notify strategy
             accountManager.notifySuccess(account, model);
             resetConsecutiveFailures(account, model);
@@ -365,6 +504,8 @@ export async function sendMessage(
           if (attempt > 0) {
             usageStats.trackRetrySuccess();
           }
+          // Clear rate limit deduplication state on success
+          clearRateLimitState(account.email, model);
           // On success, notify strategy
           accountManager.notifySuccess(account, model);
           resetConsecutiveFailures(account, model);

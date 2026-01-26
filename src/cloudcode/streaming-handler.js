@@ -16,6 +16,11 @@ import {
   RETRY_DELAY_MS,
   RATE_LIMIT_BUFFER_MS,
   NETWORK_ERROR_DELAY_MS,
+  RATE_LIMIT_DEDUP_WINDOW_MS,
+  RATE_LIMIT_STATE_RESET_MS,
+  FIRST_RETRY_DELAY_MS,
+  CAPACITY_BACKOFF_TIERS_MS,
+  MAX_CAPACITY_RETRIES,
 } from "../constants.js";
 import { config } from "../config.js";
 import {
@@ -37,6 +42,110 @@ import {
 } from "./session-manager.js";
 import usageStats from "../modules/usage-stats.js";
 import crypto from "crypto";
+import {
+  isPermanentAuthFailure,
+  isModelCapacityExhausted,
+  parseRateLimitReason,
+  RateLimitReason,
+  getErrorAction,
+} from "../utils/error-detection.js";
+
+/**
+ * Rate limit deduplication state management
+ * Prevents thundering herd when multiple concurrent requests hit 429s
+ */
+const rateLimitStateByAccountModel = new Map(); // `${email}:${model}` -> { consecutive429, lastAt }
+
+/**
+ * Get deduplication key for rate limit tracking
+ * @param {string} email - Account email
+ * @param {string} model - Model ID
+ * @returns {string} Dedup key
+ */
+function getDedupKey(email, model) {
+  return `${email}:${model}`;
+}
+
+/**
+ * Get rate limit backoff with deduplication and exponential backoff
+ * @param {string} email - Account email
+ * @param {string} model - Model ID
+ * @param {number|null} serverRetryAfterMs - Server-provided retry time
+ * @returns {{attempt: number, delayMs: number, isDuplicate: boolean}} Backoff info
+ */
+function getRateLimitBackoff(email, model, serverRetryAfterMs) {
+  const now = Date.now();
+  const stateKey = getDedupKey(email, model);
+  const previous = rateLimitStateByAccountModel.get(stateKey);
+
+  // Check if within dedup window - return duplicate status
+  if (previous && now - previous.lastAt < RATE_LIMIT_DEDUP_WINDOW_MS) {
+    const baseDelay = serverRetryAfterMs ?? FIRST_RETRY_DELAY_MS;
+    const backoffDelay = Math.min(
+      baseDelay * Math.pow(2, previous.consecutive429 - 1),
+      60000,
+    );
+    logger.debug(
+      `[CloudCode] Rate limit on ${email}:${model} within dedup window, attempt=${previous.consecutive429}, isDuplicate=true`,
+    );
+    return {
+      attempt: previous.consecutive429,
+      delayMs: Math.max(baseDelay, backoffDelay),
+      isDuplicate: true,
+    };
+  }
+
+  // Determine attempt number - reset after RATE_LIMIT_STATE_RESET_MS of inactivity
+  const attempt =
+    previous && now - previous.lastAt < RATE_LIMIT_STATE_RESET_MS
+      ? previous.consecutive429 + 1
+      : 1;
+
+  // Update state
+  rateLimitStateByAccountModel.set(stateKey, {
+    consecutive429: attempt,
+    lastAt: now,
+  });
+
+  // Calculate exponential backoff
+  const baseDelay = serverRetryAfterMs ?? FIRST_RETRY_DELAY_MS;
+  const backoffDelay = Math.min(baseDelay * Math.pow(2, attempt - 1), 60000);
+
+  logger.debug(
+    `[CloudCode] Rate limit backoff for ${email}:${model}: attempt=${attempt}, delayMs=${Math.max(
+      baseDelay,
+      backoffDelay,
+    )}`,
+  );
+  return {
+    attempt,
+    delayMs: Math.max(baseDelay, backoffDelay),
+    isDuplicate: false,
+  };
+}
+
+/**
+ * Clear rate limit state after successful request
+ * @param {string} email - Account email
+ * @param {string} model - Model ID
+ */
+function clearRateLimitState(email, model) {
+  const key = getDedupKey(email, model);
+  if (rateLimitStateByAccountModel.has(key)) {
+    rateLimitStateByAccountModel.delete(key);
+    logger.debug(`[CloudCode] Cleared rate limit state for ${email}:${model}`);
+  }
+}
+
+// Periodically clean up stale rate limit state (every 60 seconds)
+setInterval(() => {
+  const cutoff = Date.now() - RATE_LIMIT_STATE_RESET_MS;
+  for (const [key, state] of rateLimitStateByAccountModel.entries()) {
+    if (state.lastAt < cutoff) {
+      rateLimitStateByAccountModel.delete(key);
+    }
+  }
+}, 60000);
 
 /**
  * Send a streaming request to Cloud Code with multi-account support
@@ -252,24 +361,108 @@ export async function* sendMessageStream(
             );
 
             if (response.status === 401) {
-              // Auth error - clear caches and retry
+              // Check for permanent auth failures first
+              if (isPermanentAuthFailure(errorText)) {
+                logger.error(
+                  `[CloudCode] Permanent auth failure for ${account.email}: ${errorText.substring(0, 100)}`,
+                );
+                accountManager.markInvalid(
+                  account.email,
+                  "Token revoked - re-authentication required",
+                );
+                throw new Error(`AUTH_INVALID_PERMANENT: ${errorText}`);
+              }
+
+              // Transient auth error - clear caches and try next endpoint
               accountManager.clearTokenCache(account.email);
               accountManager.clearProjectCache(account.email);
               continue;
             }
 
             if (response.status === 429) {
+              const resetMs = parseResetTime(response, errorText);
+
+              // Check if this is a model capacity issue (server-side, affects all users)
+              // For capacity issues: retry same account with progressive backoff
+              if (isModelCapacityExhausted(errorText)) {
+                // Track capacity retry count for this request
+                if (!lastError?.capacityRetryCount) {
+                  lastError = {
+                    is429: true,
+                    response,
+                    errorText,
+                    resetMs,
+                    capacityRetryCount: 0,
+                    isCapacity: true,
+                  };
+                }
+
+                if (lastError.capacityRetryCount < MAX_CAPACITY_RETRIES) {
+                  const tierIndex = Math.min(
+                    lastError.capacityRetryCount,
+                    CAPACITY_BACKOFF_TIERS_MS.length - 1,
+                  );
+                  const backoffMs = CAPACITY_BACKOFF_TIERS_MS[tierIndex];
+                  lastError.capacityRetryCount++;
+
+                  logger.info(
+                    `[CloudCode] Model capacity exhausted, retry ${lastError.capacityRetryCount}/${MAX_CAPACITY_RETRIES} after ${formatDuration(backoffMs)}...`,
+                  );
+                  await sleep(backoffMs);
+                  // Don't increment endpoint - retry same endpoint
+                  continue;
+                }
+                // Max capacity retries exceeded - fall through to treat as quota exhaustion
+                logger.warn(
+                  `[CloudCode] Max capacity retries (${MAX_CAPACITY_RETRIES}) exceeded, treating as rate limit`,
+                );
+              }
+
+              // Get deduplication info for rate limit handling
+              const backoff = getRateLimitBackoff(
+                account.email,
+                model,
+                resetMs,
+              );
+
+              // If within dedup window, mark as duplicate and continue to next endpoint
+              if (backoff.isDuplicate) {
+                logger.debug(
+                  `[CloudCode] Rate limit duplicate for ${account.email}, skipping...`,
+                );
+                if (
+                  !lastError?.is429 ||
+                  (resetMs &&
+                    (!lastError.resetMs || resetMs < lastError.resetMs))
+                ) {
+                  lastError = {
+                    is429: true,
+                    response,
+                    errorText,
+                    resetMs,
+                    isDuplicate: true,
+                  };
+                }
+                continue;
+              }
+
               // Rate limited on this endpoint - try next endpoint first (DAILY → PROD)
               logger.debug(
-                `[CloudCode] Stream rate limited at ${endpoint}, trying next endpoint...`,
+                `[CloudCode] Stream rate limited at ${endpoint} (attempt ${backoff.attempt}), trying next endpoint...`,
               );
-              const resetMs = parseResetTime(response, errorText);
+
               // Keep minimum reset time across all 429 responses
               if (
                 !lastError?.is429 ||
                 (resetMs && (!lastError.resetMs || resetMs < lastError.resetMs))
               ) {
-                lastError = { is429: true, response, errorText, resetMs };
+                lastError = {
+                  is429: true,
+                  response,
+                  errorText,
+                  resetMs,
+                  attempt: backoff.attempt,
+                };
               }
               continue;
             }
@@ -309,6 +502,8 @@ export async function* sendMessageStream(
               if (attempt > 0) {
                 usageStats.trackRetrySuccess();
               }
+              // Clear rate limit deduplication state on success
+              clearRateLimitState(account.email, model);
               // Notify strategy of success
               accountManager.notifySuccess(account, anthropicRequest.model);
               // Update session token usage - we need to estimate or track actuals if streamer provides them
