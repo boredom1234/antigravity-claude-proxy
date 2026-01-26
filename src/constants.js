@@ -160,6 +160,17 @@ export const STICKY_MESSAGE_THRESHOLD = config?.stickyMessageThreshold || 20; //
 export const STICKY_TOKEN_THRESHOLD = config?.stickyTokenThreshold || 200000; // Rotate after 200k tokens
 export const ROTATION_QUOTA_THRESHOLD = config?.rotationQuotaThreshold || 0.3; // Proactive rotation when quota < 30%
 
+// Account selection strategies
+export const SELECTION_STRATEGIES = ["sticky", "round-robin", "hybrid"];
+export const DEFAULT_SELECTION_STRATEGY = "hybrid";
+
+// Strategy display labels
+export const STRATEGY_LABELS = {
+  sticky: "Sticky (Cache Optimized)",
+  "round-robin": "Round Robin (Load Balanced)",
+  hybrid: "Hybrid (Smart Distribution)",
+};
+
 // Thinking model constants
 export const MIN_SIGNATURE_LENGTH = 50; // Minimum valid thinking signature length
 
@@ -352,4 +363,7 @@ export default {
   MIN_TOP_P,
   MAX_TOP_P,
   MIN_TOP_K,
+  SELECTION_STRATEGIES,
+  DEFAULT_SELECTION_STRATEGY,
+  STRATEGY_LABELS,
 };

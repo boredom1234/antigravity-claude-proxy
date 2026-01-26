@@ -26,6 +26,30 @@ const DEFAULT_CONFIG = {
   modelMapping: {},
   defaultThinkingLevel: null, // 'minimal', 'low', 'medium', 'high' or null
   defaultThinkingBudget: 16000, // Default thinking budget in tokens
+  // Account selection strategy configuration
+  accountSelection: {
+    strategy: "hybrid", // 'sticky' | 'round-robin' | 'hybrid'
+    // Hybrid strategy tuning
+    healthScore: {
+      initial: 70, // Starting score for new accounts
+      successReward: 1, // Points on successful request
+      rateLimitPenalty: -10, // Points on rate limit
+      failurePenalty: -20, // Points on other failures
+      recoveryPerHour: 2, // Passive recovery rate
+      minUsable: 50, // Minimum score to be selected
+      maxScore: 100, // Maximum score cap
+    },
+    tokenBucket: {
+      maxTokens: 50, // Maximum token capacity
+      tokensPerMinute: 6, // Regeneration rate
+      initialTokens: 50, // Starting tokens
+    },
+    quota: {
+      lowThreshold: 0.1, // 10% - reduce score
+      criticalThreshold: 0.05, // 5% - exclude from candidates
+      staleMs: 300000, // 5 min - max age of quota data to trust
+    },
+  },
 };
 
 // Env Var Mapping (Env Name -> Config Key)
@@ -200,6 +224,14 @@ function validateConfig(cfg) {
   ) {
     warnings.push("modelMapping must be an object");
     validated.modelMapping = {};
+  }
+
+  // Validate accountSelection
+  if (
+    validated.accountSelection !== undefined &&
+    typeof validated.accountSelection !== "object"
+  ) {
+    validated.accountSelection = DEFAULT_CONFIG.accountSelection;
   }
 
   // Log warnings

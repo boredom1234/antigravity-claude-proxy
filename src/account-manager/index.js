@@ -24,12 +24,12 @@ import {
   clearTokenCache as clearToken,
 } from "./credentials.js";
 import {
-  pickNext as selectNext,
-  getCurrentStickyAccount as getSticky,
-  shouldWaitForCurrentAccount as shouldWait,
-  pickStickyAccount as selectSticky,
-} from "./selection.js";
+  createStrategy,
+  getStrategyLabel,
+  DEFAULT_STRATEGY,
+} from "./strategies/index.js";
 import { logger } from "../utils/logger.js";
+import { config } from "../config.js";
 
 export class AccountManager {
   #accounts = [];
@@ -37,6 +37,9 @@ export class AccountManager {
   #configPath;
   #settings = {};
   #initialized = false;
+  #strategy = null;
+  #strategyName = DEFAULT_STRATEGY;
+
   // Map to track sticky accounts per session: sessionId -> accountEmail
   #sessionMap = new Map();
 
@@ -53,8 +56,11 @@ export class AccountManager {
   // Reload lock to prevent concurrent reload operations
   #reloadPromise = null;
 
-  constructor(configPath = ACCOUNT_CONFIG_PATH) {
+  constructor(configPath = ACCOUNT_CONFIG_PATH, strategyName = null) {
     this.#configPath = configPath;
+    if (strategyName) {
+      this.#strategyName = strategyName;
+    }
   }
 
   /**
@@ -83,6 +89,18 @@ export class AccountManager {
 
     // Clear any expired rate limits
     this.clearExpiredLimits();
+
+    // Determine strategy: CLI override > env var > config file > default
+    const configStrategy = config?.accountSelection?.strategy;
+    const envStrategy = process.env.ACCOUNT_STRATEGY;
+    this.#strategyName = envStrategy || configStrategy || this.#strategyName;
+
+    // Create the strategy instance
+    const strategyConfig = config?.accountSelection || {};
+    this.#strategy = createStrategy(this.#strategyName, strategyConfig);
+    logger.info(
+      `[AccountManager] Using ${getStrategyLabel(this.#strategyName)} selection strategy`,
+    );
 
     this.#initialized = true;
   }
@@ -210,62 +228,38 @@ export class AccountManager {
   }
 
   /**
-   * Pick the next available account (fallback when current is unavailable).
-   * Sets activeIndex to the selected account's index.
-   * @param {string} [modelId] - Optional model ID
-   * @returns {Object|null} The next available account or null if none available
-   */
-  pickNext(modelId = null, quotaType = null) {
-    const { account, newIndex } = selectNext(
-      this.#accounts,
-      this.#currentIndex,
-      () => this.saveToDisk(),
-      modelId,
-      quotaType,
-    );
-    this.#currentIndex = newIndex;
-    return account;
-  }
-
-  /**
-   * Get the current account without advancing the index (sticky selection).
-   * Used for cache continuity - sticks to the same account until rate-limited.
-   * @param {string} [modelId] - Optional model ID
-   * @returns {Object|null} The current account or null if unavailable/rate-limited
-   */
-  getCurrentStickyAccount(modelId = null, quotaType = null) {
-    const { account, newIndex } = getSticky(
-      this.#accounts,
-      this.#currentIndex,
-      () => this.saveToDisk(),
-      modelId,
-      quotaType,
-    );
-    this.#currentIndex = newIndex;
-    return account;
-  }
-
-  /**
-   * Check if we should wait for the current account's rate limit to reset.
-   * Used for sticky account selection - wait if rate limit is short (≤ threshold).
-   * @param {string} [modelId] - Optional model ID
-   * @returns {{shouldWait: boolean, waitMs: number, account: Object|null}}
-   */
-  shouldWaitForCurrentAccount(modelId = null, quotaType = null) {
-    return shouldWait(this.#accounts, this.#currentIndex, modelId, quotaType);
-  }
-
-  /**
-   * Pick an account with sticky selection preference.
-   * Prefers the current account for cache continuity, only switches when:
-   * - Current account is rate-limited for > 2 minutes
-   * - Current account is invalid
-   * - Session ID has changed (new conversation)
-   * @param {string} [modelId] - Optional model ID
-   * @param {string} [sessionId] - Optional session ID
-   * @param {string} [quotaType] - Optional quota type
-   * @param {Object} [sessionInfo] - Optional session tracking info
+   * Select an account using the configured strategy.
+   * This is the main method to use for account selection.
+   * @param {string} [modelId] - Model ID for the request
+   * @param {Object} [options] - Additional options
+   * @param {string} [options.sessionId] - Session ID for cache continuity
+   * @param {string} [options.quotaType] - Optional quota type (for legacy support)
    * @returns {{account: Object|null, waitMs: number}} Account to use and optional wait time
+   */
+  selectAccount(modelId = null, options = {}) {
+    if (!this.#strategy) {
+      throw new Error(
+        "AccountManager not initialized. Call initialize() first.",
+      );
+    }
+
+    const { sessionId, quotaType } = options;
+
+    const result = this.#strategy.selectAccount(this.#accounts, modelId, {
+      currentIndex: this.#currentIndex,
+      onSave: () => this.saveToDisk(),
+      sessionId: sessionId,
+      sessionMap: this.#sessionMap,
+      quotaType: quotaType,
+      ...options,
+    });
+
+    this.#currentIndex = result.index;
+    return { account: result.account, waitMs: result.waitMs || 0 };
+  }
+
+  /**
+   * Legacy wrapper for pickStickyAccount
    */
   pickStickyAccount(
     modelId = null,
@@ -273,39 +267,62 @@ export class AccountManager {
     quotaType = null,
     sessionInfo = null,
   ) {
-    // Manage session map LRU (Least Recently Used) behavior
-    // If sessionId is provided and exists, move it to the end (mark as recently used)
-    if (sessionId && this.#sessionMap.has(sessionId)) {
-      const email = this.#sessionMap.get(sessionId);
-      this.#sessionMap.delete(sessionId);
-      this.#sessionMap.set(sessionId, email);
+    return this.selectAccount(modelId, { sessionId, quotaType, sessionInfo });
+  }
+
+  /**
+   * Legacy wrapper for pickNext
+   */
+  pickNext(modelId = null, quotaType = null) {
+    const { account } = this.selectAccount(modelId, { quotaType });
+    return account;
+  }
+
+  /**
+   * Notify the strategy of a successful request
+   * @param {Object} account - The account that was used
+   * @param {string} modelId - The model ID that was used
+   */
+  notifySuccess(account, modelId) {
+    if (this.#strategy) {
+      this.#strategy.onSuccess(account, modelId);
     }
+  }
 
-    // Prune session map if it grows too large (prevent memory leaks)
-    if (this.#sessionMap.size > 1000) {
-      // Map keys iterate in insertion order. The first key is the oldest (LRU).
-      // Remove the first 200 entries to maintain size
-      let count = 0;
-      for (const key of this.#sessionMap.keys()) {
-        if (count++ > 200) break;
-        if (key === sessionId) continue; // Critical: Don't delete active session
-        this.#sessionMap.delete(key);
-      }
+  /**
+   * Notify the strategy of a rate limit
+   * @param {Object} account - The account that was rate-limited
+   * @param {string} modelId - The model ID that was rate-limited
+   */
+  notifyRateLimit(account, modelId) {
+    if (this.#strategy) {
+      this.#strategy.onRateLimit(account, modelId);
     }
+  }
 
-    const { account, waitMs, newIndex } = selectSticky(
-      this.#accounts,
-      this.#currentIndex,
-      () => this.saveToDisk(),
-      modelId,
-      sessionId,
-      this.#sessionMap,
-      quotaType,
-      sessionInfo,
-    );
+  /**
+   * Notify the strategy of a failure
+   * @param {Object} account - The account that failed
+   * @param {string} modelId - The model ID that failed
+   */
+  notifyFailure(account, modelId) {
+    if (this.#strategy) {
+      this.#strategy.onFailure(account, modelId);
+    }
+  }
 
-    this.#currentIndex = newIndex;
-    return { account, waitMs };
+  /**
+   * Get the health tracker from the current strategy (if available)
+   * @returns {Object|null} Health tracker instance or null
+   */
+  getHealthTracker() {
+    if (
+      this.#strategy &&
+      typeof this.#strategy.getHealthTracker === "function"
+    ) {
+      return this.#strategy.getHealthTracker();
+    }
+    return null;
   }
 
   /**

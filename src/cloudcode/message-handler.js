@@ -85,23 +85,30 @@ export async function sendMessage(
     if (attempt > 0) {
       usageStats.trackRetry();
     }
-    // Use sticky account selection for cache continuity
-    const { account: stickyAccount, waitMs } = accountManager.pickStickyAccount(
+    // Use modular account selection (Select account using configured strategy)
+    const { account: selectedAccount, waitMs } = accountManager.selectAccount(
       model,
-      sessionId,
-      quotaType,
-      sessionInfo,
+      {
+        sessionId,
+        quotaType,
+        sessionInfo,
+      },
     );
-    let account = stickyAccount;
+    let account = selectedAccount;
 
-    // Handle waiting for sticky account
+    // Handle waiting for account availability (if strategy suggests waiting)
     if (!account && waitMs > 0) {
       logger.info(
-        `[CloudCode] Waiting ${formatDuration(waitMs)} for sticky account...`,
+        `[CloudCode] Waiting ${formatDuration(waitMs)} for account...`,
       );
       await sleep(waitMs);
       accountManager.clearExpiredLimits();
-      account = accountManager.getCurrentStickyAccount(model, quotaType);
+      // Retry selection after wait
+      const retryResult = accountManager.selectAccount(model, {
+        sessionId,
+        quotaType,
+      });
+      account = retryResult.account;
     }
 
     // Handle all accounts rate-limited
@@ -161,16 +168,19 @@ export async function sendMessage(
         accountManager.clearExpiredLimits();
 
         // Try to pick an account again
-        account = accountManager.pickNext(model, quotaType);
+        const retryResult = accountManager.selectAccount(model, { quotaType });
+        account = retryResult.account;
 
         // If still no account after waiting, try optimistic reset
-        // This handles cases where the API rate limit is transient
         if (!account) {
           logger.warn(
             "[CloudCode] No account available after wait, attempting optimistic reset...",
           );
-          accountManager.resetAllRateLimits(); // Reset all is still generic (clears all keys)
-          account = accountManager.pickNext(model, quotaType);
+          accountManager.resetAllRateLimits();
+          const finalResult = accountManager.selectAccount(model, {
+            quotaType,
+          });
+          account = finalResult.account;
         }
 
         // If we waited and still found nothing, we should continue the loop
@@ -316,7 +326,8 @@ export async function sendMessage(
             if (attempt > 0) {
               usageStats.trackRetrySuccess();
             }
-            // On success, reset consecutive failures
+            // On success, notify strategy
+            accountManager.notifySuccess(account, model);
             resetConsecutiveFailures(account, model);
 
             return result;
@@ -354,7 +365,8 @@ export async function sendMessage(
           if (attempt > 0) {
             usageStats.trackRetrySuccess();
           }
-          // On success, reset consecutive failures
+          // On success, notify strategy
+          accountManager.notifySuccess(account, model);
           resetConsecutiveFailures(account, model);
 
           // Update session token usage for rotation tracking
@@ -392,6 +404,7 @@ export async function sendMessage(
             quotaType,
             parseLimitType(lastError.errorText),
           );
+          accountManager.notifyRateLimit(account, model);
           throw new Error(`Rate limited: ${lastError.errorText}`);
         }
         throw lastError;
@@ -429,8 +442,8 @@ export async function sendMessage(
         logger.warn(
           `[CloudCode] Network error for ${account.email}, trying next account... (${error.message})`,
         );
+        accountManager.notifyFailure(account, model);
         await sleep(1000); // Brief pause before retry
-        accountManager.pickNext(model, quotaType); // Advance to next account
         continue;
       }
 

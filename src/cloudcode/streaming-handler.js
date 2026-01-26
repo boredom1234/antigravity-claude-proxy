@@ -86,23 +86,29 @@ export async function* sendMessageStream(
     if (attempt > 0) {
       usageStats.trackRetry();
     }
-    // Use sticky account selection for cache continuity
-    const { account: stickyAccount, waitMs } = accountManager.pickStickyAccount(
+    // Use modular account selection
+    const { account: selectedAccount, waitMs } = accountManager.selectAccount(
       model,
-      sessionId,
-      quotaType,
-      sessionInfo,
+      {
+        sessionId,
+        quotaType,
+        sessionInfo,
+      },
     );
-    let account = stickyAccount;
+    let account = selectedAccount;
 
-    // Handle waiting for sticky account
+    // Handle waiting for account availability
     if (!account && waitMs > 0) {
       logger.info(
-        `[CloudCode] Waiting ${formatDuration(waitMs)} for sticky account...`,
+        `[CloudCode] Waiting ${formatDuration(waitMs)} for account... (stream)`,
       );
       await sleep(waitMs);
       accountManager.clearExpiredLimits();
-      account = accountManager.getCurrentStickyAccount(model, quotaType);
+      const retryResult = accountManager.selectAccount(model, {
+        sessionId,
+        quotaType,
+      });
+      account = retryResult.account;
     }
 
     // Handle all accounts rate-limited
@@ -146,16 +152,19 @@ export async function* sendMessageStream(
         // Add small buffer after waiting to ensure rate limits have truly expired
         await sleep(500);
         accountManager.clearExpiredLimits();
-        account = accountManager.pickNext(model, quotaType);
+        const retryResult = accountManager.selectAccount(model, { quotaType });
+        account = retryResult.account;
 
         // If still no account after waiting, try optimistic reset
-        // This handles cases where the API rate limit is transient
         if (!account) {
           logger.warn(
             "[CloudCode] No account available after wait, attempting optimistic reset...",
           );
           accountManager.resetRateLimitsForModel(model, quotaType);
-          account = accountManager.pickNext(model, quotaType);
+          const finalResult = accountManager.selectAccount(model, {
+            quotaType,
+          });
+          account = finalResult.account;
         }
       }
 
@@ -300,6 +309,8 @@ export async function* sendMessageStream(
               if (attempt > 0) {
                 usageStats.trackRetrySuccess();
               }
+              // Notify strategy of success
+              accountManager.notifySuccess(account, anthropicRequest.model);
               // Update session token usage - we need to estimate or track actuals if streamer provides them
               // Current streamer implementation doesn't return total tokens easily here
               // But we can update with 0 just to refresh lastSeen
@@ -432,6 +443,7 @@ export async function* sendMessageStream(
             model,
             quotaType,
           );
+          accountManager.notifyRateLimit(account, model);
           throw new Error(`Rate limited: ${lastError.errorText}`);
         }
         throw lastError;
@@ -469,8 +481,8 @@ export async function* sendMessageStream(
         logger.warn(
           `[CloudCode] Network error for ${account.email} (stream), trying next account... (${error.message})`,
         );
+        accountManager.notifyFailure(account, model);
         await sleep(NETWORK_ERROR_DELAY_MS); // Brief pause before retry
-        accountManager.pickNext(model, quotaType); // Advance to next account
         continue;
       }
 
